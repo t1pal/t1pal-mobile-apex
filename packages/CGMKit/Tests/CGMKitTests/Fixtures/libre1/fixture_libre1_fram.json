@@ -1,0 +1,198 @@
+{
+  "_comment": "Libre 1 FRAM Test Vectors - unencrypted FRAM parsing",
+  "_source": "xDrip NFCReaderXTest.java, DiaBLE Libre.swift",
+  "_task": "LIBRE-SYNTH-006",
+  "_description": "Test vectors for Libre 1 unencrypted FRAM parsing",
+  "_updated": "2026-02-13",
+
+  "_format": {
+    "fram": {
+      "totalSize": 344,
+      "blockCount": 43,
+      "blockSize": 8,
+      "headerRange": "0-23 (24 bytes, 3 blocks)",
+      "bodyRange": "24-319 (296 bytes, 37 blocks)",
+      "footerRange": "320-343 (24 bytes, 3 blocks)"
+    },
+    "patchInfo": {
+      "size": 6,
+      "byte0": "sensor type identifier (0xDF or 0xA2 for Libre 1)",
+      "byte2_high": "sensor family (0 = Libre 1)",
+      "byte3": "region"
+    },
+    "sensorUID": "8 bytes - sensor unique identifier from NFC"
+  },
+
+  "sensor_types": {
+    "libre1": {
+      "patchInfoByte0": ["0xDF", "0xA2"],
+      "description": "Libre 1 (14 day, unencrypted)",
+      "family": 0,
+      "maxLife": 20160,
+      "encryption": "none"
+    },
+    "libreUS14day": {
+      "patchInfoByte0": ["0xE5", "0xE6"],
+      "description": "Libre US 14 day",
+      "family": 0,
+      "maxLife": 20160,
+      "encryption": "Libre 2 style"
+    },
+    "libreProH": {
+      "patchInfoByte0": ["0x70"],
+      "description": "Libre Pro/H (professional)",
+      "family": 1,
+      "encryption": "none"
+    }
+  },
+
+  "sensor_states": {
+    "0x00": "unknown",
+    "0x01": "notActivated",
+    "0x02": "warmingUp",
+    "0x03": "active",
+    "0x04": "expired",
+    "0x05": "shutdown",
+    "0x06": "failure"
+  },
+
+  "sensor_regions": {
+    "0x00": "unknown",
+    "0x01": "european",
+    "0x02": "usa",
+    "0x04": "australianCanadian",
+    "0x08": "easternROW"
+  },
+
+  "fram_structure": {
+    "header": {
+      "offset": 0,
+      "size": 24,
+      "fields": {
+        "crc16": "bytes[0-1] - CRC16 of bytes[2-23]",
+        "reserved": "bytes[2-3]",
+        "state": "byte[4] - SensorState enum",
+        "reserved2": "byte[5]",
+        "failureErrorCode": "byte[6] - if state=failure",
+        "failureAge": "bytes[7-8] - minutes since activation when failure occurred",
+        "reserved3": "bytes[9-23] - all zeros for Libre 1"
+      }
+    },
+    "body": {
+      "offset": 24,
+      "size": 296,
+      "fields": {
+        "crc16": "bytes[0-1] - CRC16 of bytes[2-295]",
+        "trendIndex": "byte[2] - next trend slot to write (0-15)",
+        "historyIndex": "byte[3] - next history slot to write (0-31)",
+        "trendData": "bytes[4-99] - 16 trend readings × 6 bytes each",
+        "historyData": "bytes[100-291] - 32 history readings × 6 bytes each",
+        "age": "bytes[292-293] - minutes since sensor activation (LE)",
+        "initializations": "byte[294] - number of times sensor was initialized"
+      }
+    },
+    "footer": {
+      "offset": 320,
+      "size": 24,
+      "fields": {
+        "crc16": "bytes[0-1] - CRC16 of bytes[2-23]",
+        "region": "byte[3] - SensorRegion enum",
+        "maxLife": "bytes[6-7] - max sensor life in minutes (LE)",
+        "calibrationInfo": "bytes[8-15] - factory calibration data"
+      }
+    }
+  },
+
+  "glucose_record_format": {
+    "size": 6,
+    "fields": {
+      "rawValue": "bits[0-13] (14 bits) - raw glucose value",
+      "quality": "bits[14-24] (11 bits) - lower 9 bits = quality flags, upper 2 = qualityFlags",
+      "hasError": "bit[25] (1 bit) - error flag",
+      "rawTemperature": "bits[26-37] (12 bits) - raw temperature << 2",
+      "temperatureAdjustment": "bits[38-46] (9 bits) - adjustment << 2",
+      "negativeAdjustment": "bit[47] (1 bit) - if set, temperatureAdjustment is negative"
+    }
+  },
+
+  "fram_vectors": [
+    {
+      "id": "libre1_active_sensor",
+      "description": "Libre 1 active sensor with valid readings (344 bytes)",
+      "source": "xDrip NFCReaderXTest.java data_libre1",
+      "sensorType": "libre1",
+      "patchInfoHex": "9d0830081a24",
+      "patchInfo": [157, 8, 48, 8, 26, 36],
+      "framHex": "459908 1b 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 46 24 00 0c d3 04 00 00 9d 80 b8 04 00 00 5d 80 c1 04 00 10 9d 80 ce 04 00 00 9d 80 d2 04 00 e8 9c 80 c9 04 00 dc 5c 80 c3 04 00 c4 9c 80 c8 04 00 8c 5c 80 cb 04 00 64 5c 80 cf 04 00 40 5c 80 ea 04 00 f8 5b 80 28 05 00 a8 5b 80 3c 05 00 80 5b 80 48 05 00 9c 5b 80 32 05 00 ec 9b 80 2b 05 00 e0 5b 80 68 04 00 b0 57 80 4a 03 00 f4 9b 80 fd 02 00 d0 9b 80 00 03 00 14 5c 80 42 03 00 58 5b 80 a0 03 00 fc 9c 80 23 04 00 78 5d 80 ca 04 00 94 9d 80 f8 04 00 6c 9d 80 78 04 00 d4 9d 80 72 04 00 5c 5c 80 c6 04 00 00 9d 80 86 04 00 08 9d 80 58 04 00 e0 9d 80 31 04 00 38 9e 80 33 04 00 e8 5b 80 b7 04 00 cc 5a 80 a4 04 00 18 5a 80 dc 04 00 fc 5a 80 e1 04 00 90 5a 80 8b 04 00 d0 59 80 18 04 00 84 59 80 c2 03 00 24 59 80 5b 03 00 9c 58 80 5b 03 00 70 58 80 7f 03 00 40 58 80 e3 03 00 9c 58 80 ae 04 00 bc 58 80 5d 05 00 c4 18 80 a5 05 00 20 58 80 14 05 00 bc 17 80 88 04 00 fc 57 80 81 13 01 00 4f 6a 30 08 4b 0b 58 51 14 03 96 80 5a 00 cd a6 14 7e 1a 00 00 f3 c8 6b",
+      "fram": [69, 153, 8, 27, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 36, 0, 12, 211, 4, 0, 0, 157, 128, 184, 4, 0, 0, 93, 128, 193, 4, 0, 16, 157, 128, 206, 4, 0, 0, 157, 128, 210, 4, 0, 232, 156, 128, 201, 4, 0, 220, 92, 128, 195, 4, 0, 196, 156, 128, 200, 4, 0, 140, 92, 128, 203, 4, 0, 100, 92, 128, 207, 4, 0, 64, 92, 128, 234, 4, 0, 248, 91, 128, 40, 5, 0, 168, 91, 128, 60, 5, 0, 128, 91, 128, 72, 5, 0, 156, 91, 128, 50, 5, 0, 236, 155, 128, 43, 5, 0, 224, 91, 128, 104, 4, 0, 176, 87, 128, 74, 3, 0, 244, 155, 128, 253, 2, 0, 208, 155, 128, 0, 3, 0, 20, 92, 128, 66, 3, 0, 88, 91, 128, 160, 3, 0, 252, 156, 128, 35, 4, 0, 120, 93, 128, 202, 4, 0, 148, 157, 128, 248, 4, 0, 108, 157, 128, 120, 4, 0, 212, 157, 128, 114, 4, 0, 92, 92, 128, 198, 4, 0, 0, 157, 128, 134, 4, 0, 8, 157, 128, 88, 4, 0, 224, 157, 128, 49, 4, 0, 56, 158, 128, 51, 4, 0, 232, 91, 128, 183, 4, 0, 204, 90, 128, 164, 4, 0, 24, 90, 128, 220, 4, 0, 252, 90, 128, 225, 4, 0, 144, 90, 128, 139, 4, 0, 208, 89, 128, 24, 4, 0, 132, 89, 128, 194, 3, 0, 36, 89, 128, 91, 3, 0, 156, 88, 128, 91, 3, 0, 112, 88, 128, 127, 3, 0, 64, 88, 128, 227, 3, 0, 156, 88, 128, 174, 4, 0, 188, 88, 128, 93, 5, 0, 196, 24, 128, 165, 5, 0, 32, 88, 128, 20, 5, 0, 188, 23, 128, 136, 4, 0, 252, 87, 128, 129, 19, 1, 0, 79, 106, 48, 8, 75, 11, 88, 81, 20, 3, 150, 128, 90, 0, 205, 166, 20, 126, 26, 0, 0, 243, 200, 107],
+      "expected": {
+        "state": 3,
+        "stateName": "active",
+        "trendIndex": 0,
+        "historyIndex": 12,
+        "age": 4993,
+        "validCRCs": true
+      },
+      "notes": "Libre 1 with patchInfo[0]=0x9D - valid active sensor with multiple readings"
+    },
+    {
+      "id": "libre_pro_active",
+      "description": "Libre Pro/H active sensor (344 bytes)",
+      "source": "xDrip NFCReaderXTest.java data_librepro1",
+      "sensorType": "libreProH",
+      "patchInfoHex": "7000100 81a24",
+      "patchInfo": [112, 0, 16, 8, 26, 36],
+      "framHex": "85e40000030000000000000000000000000000000000000 4a464756313531 2d54303638324a49c32c2d100072 0cc04e140396805a00eda606711ac804 7e496d6203cb1b0000000066fd390d00dd0322 04c8e8d901100 4c8e419020004c8dcd9 01f303c8d4d901e7 03c8ccd901de03c8c4d901df03c8b819 02eb03c8ac1902e103c8a0d901d603c8 90190 2c803c840da01c703c8a8da01cd03c8e8 da01fb03c820da01fe03c818da010804c8ec19 023a04c8acd901ec02c880d9014501c8989a01b7 00c87cda019700c864190200 00c002190298 00c006da01a400c82c9b010000c012db01aa00c 8d4da01af00c8109b012401c8989b010602c884 da016d01c8ac1902b801c8fc1802ed02c8a01802 da03c8481802ce03c8401802 3a04c8d81802630 4c8e018 02cb02c8c4da014302c8709b010602c8d8 9a010802c8349a013c03c8581902260 3c8bc18 02c602c8a01802 7902c8c01802",
+      "fram": [133, 228, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 74, 70, 71, 86, 49, 53, 49, 45, 84, 48, 54, 56, 50, 74, 73, 195, 44, 45, 16, 0, 114, 12, 192, 78, 20, 3, 150, 128, 90, 0, 237, 166, 6, 113, 26, 200, 4, 126, 73, 109, 98, 3, 203, 27, 0, 0, 0, 0, 254, 102, 253, 57, 13, 0, 221, 3, 34, 4, 200, 232, 217, 1, 16, 4, 200, 228, 25, 2, 0, 4, 200, 220, 217, 1, 243, 3, 200, 212, 217, 1, 231, 3, 200, 204, 217, 1, 222, 3, 200, 196, 217, 1, 223, 3, 200, 184, 25, 2, 235, 3, 200, 172, 25, 2, 225, 3, 200, 160, 217, 1, 214, 3, 200, 144, 25, 2, 200, 3, 200, 64, 218, 1, 199, 3, 200, 168, 218, 1, 205, 3, 200, 232, 218, 1, 251, 3, 200, 32, 218, 1, 254, 3, 200, 24, 218, 1, 8, 4, 200, 236, 25, 2, 58, 4, 200, 172, 217, 1, 236, 2, 200, 128, 217, 1, 69, 1, 200, 152, 154, 1, 183, 0, 200, 124, 218, 1, 151, 0, 200, 100, 25, 2, 0, 0, 192, 2, 25, 2, 152, 0, 192, 6, 218, 1, 164, 0, 200, 44, 155, 1, 0, 0, 192, 18, 219, 1, 170, 0, 200, 212, 218, 1, 175, 0, 200, 16, 155, 1, 36, 1, 200, 152, 155, 1, 6, 2, 200, 132, 218, 1, 109, 1, 200, 172, 25, 2, 184, 1, 200, 252, 24, 2, 237, 2, 200, 160, 24, 2, 218, 3, 200, 72, 24, 2, 206, 3, 200, 64, 24, 2, 58, 4, 200, 216, 24, 2, 99, 4, 200, 224, 24, 2, 203, 2, 200, 196, 218, 1, 67, 2, 200, 112, 155, 1, 6, 2, 200, 216, 154, 1, 8, 2, 200, 52, 154, 1, 60, 3, 200, 88, 25, 2, 38, 3, 200, 188, 24, 2, 198, 2, 200, 160, 24, 2, 121, 2, 200, 192, 24, 2],
+      "expected": {
+        "state": 3,
+        "stateName": "active",
+        "validCRCs": true
+      },
+      "notes": "Libre Pro/H with patchInfo[0]=0x70"
+    }
+  ],
+
+  "glucose_parsing_vectors": [
+    {
+      "id": "trend_reading_parse",
+      "description": "Parse a 6-byte trend reading",
+      "recordHex": "d30400009d80",
+      "record": [211, 4, 0, 0, 157, 128],
+      "expected": {
+        "rawValue": 1235,
+        "quality": 0,
+        "hasError": false
+      },
+      "notes": "First trend reading from libre1_active_sensor at body offset 4"
+    },
+    {
+      "id": "history_reading_parse",
+      "description": "Parse a 6-byte history reading",
+      "recordHex": "68040 0b05780",
+      "record": [104, 4, 0, 176, 87, 128],
+      "expected": {
+        "rawValue": 1128,
+        "quality": 0,
+        "hasError": false
+      },
+      "notes": "History reading from libre1_active_sensor"
+    }
+  ],
+
+  "crc16_vectors": [
+    {
+      "id": "header_crc",
+      "description": "CRC16 validation for header",
+      "dataHex": "081b030000000000000000000000000000000000000000",
+      "crcHex": "4599",
+      "crcValue": 39237,
+      "notes": "CRC16 of header bytes[2-23], stored in bytes[0-1]"
+    }
+  ],
+
+  "python_compat": {
+    "description": "Python parsing logic for Libre 1 FRAM",
+    "code": "import struct\n\ndef read_bits(buffer: bytes, byte_offset: int, bit_offset: int, bit_count: int) -> int:\n    \"\"\"Read bits from buffer (DiaBLE-compatible)\"\"\"\n    result = 0\n    for i in range(bit_count):\n        total_bit = byte_offset * 8 + bit_offset + i\n        byte_idx = total_bit // 8\n        bit_idx = total_bit % 8\n        if byte_idx < len(buffer) and ((buffer[byte_idx] >> bit_idx) & 1) == 1:\n            result |= 1 << i\n    return result\n\ndef parse_libre1_glucose_record(data: bytes, offset: int) -> dict:\n    \"\"\"Parse a 6-byte glucose record from FRAM\"\"\"\n    raw_value = read_bits(data, offset, 0, 14)\n    quality = read_bits(data, offset, 14, 11) & 0x1FF\n    quality_flags = (read_bits(data, offset, 14, 11) & 0x600) >> 9\n    has_error = read_bits(data, offset, 25, 1) != 0\n    raw_temp = read_bits(data, offset, 26, 12) << 2\n    temp_adj = read_bits(data, offset, 38, 9) << 2\n    neg_adj = read_bits(data, offset, 47, 1) != 0\n    if neg_adj:\n        temp_adj = -temp_adj\n    return {\n        'rawValue': raw_value,\n        'quality': quality,\n        'qualityFlags': quality_flags,\n        'hasError': has_error,\n        'rawTemperature': raw_temp,\n        'temperatureAdjustment': temp_adj\n    }\n\ndef parse_libre1_fram(data: bytes) -> dict:\n    \"\"\"Parse 344-byte Libre 1 FRAM\"\"\"\n    if len(data) < 344:\n        return None\n    state = data[4]\n    trend_idx = data[26]\n    history_idx = data[27]\n    age = data[316] | (data[317] << 8)\n    max_life = data[326] | (data[327] << 8)\n    region = data[323]\n    return {\n        'state': state,\n        'trendIndex': trend_idx,\n        'historyIndex': history_idx,\n        'age': age,\n        'maxLife': max_life,\n        'region': region\n    }"
+  }
+}

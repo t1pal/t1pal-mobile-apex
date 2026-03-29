@@ -1,0 +1,353 @@
+{
+  "test_name": "dash_message_parsing",
+  "description": "DASH-SYNTH-003: Test vectors for Omnipod DASH/Eros message parsing and encoding",
+  "reference": "OmniBLE/OmnipodCommon/Message.swift, OmniBLETests/MessageTests.swift, OmniBLETests/Driver/Comm/message/MessagePacketTests.swift",
+  "protocol": {
+    "message_format": {
+      "description": "Omnipod message structure",
+      "fields": "[address:4][control:1][length:1][messageBlocks...][CRC16:2]",
+      "control_byte": "sequenceNum (bits 2-6) + type flags",
+      "crc": "CRC16-CCITT over all bytes except CRC itself"
+    },
+    "message_packet_format": {
+      "description": "BLE transport layer for DASH",
+      "header_size": 16,
+      "fields": "type + source + destination + sequenceNumber + ackNumber + flags + payload"
+    }
+  },
+  "message_block_types": {
+    "0x01": "VersionResponse",
+    "0x03": "SetupPodCommand",
+    "0x07": "AssignAddressCommand",
+    "0x0e": "GetStatusCommand",
+    "0x19": "ConfigureAlertsCommand",
+    "0x1a": "SetInsulinScheduleCommand",
+    "0x1d": "StatusResponse"
+  },
+  "vectors": {
+    "get_status_command": [
+      {
+        "name": "GetStatusCommand Encode",
+        "source": "MessageTests.swift testMessageData()",
+        "operation": "encode",
+        "inputs": {
+          "address": "0x1f01482a",
+          "sequence_num": 4
+        },
+        "expected_hex": "1f01482a10030e0100802c",
+        "notes": "Basic GetStatus command encoding"
+      }
+    ],
+    "status_response": [
+      {
+        "name": "StatusResponse Decode",
+        "source": "MessageTests.swift testMessageDecoding()",
+        "operation": "decode",
+        "message_hex": "1f00ee84300a1d18003f1800004297ff8128",
+        "expected": {
+          "address": "0x1f00ee84",
+          "sequence_num": 12,
+          "reservoir_level_above_threshold": true,
+          "time_active_minutes": 4261,
+          "delivery_status": "scheduledBasal",
+          "pod_progress_status": "aboveFiftyUnits",
+          "insulin_delivered": 6.3,
+          "bolus_not_delivered": 0.0,
+          "last_programming_seq_num": 3,
+          "alerts": []
+        },
+        "notes": "Normal running pod status"
+      },
+      {
+        "name": "StatusResponse with Alerts",
+        "source": "MessageTests.swift testStatusResponseAlarmsParsing()",
+        "operation": "decode",
+        "block_hex": "1d28008200004446ebff",
+        "expected": {
+          "alerts": ["slot3ExpirationReminder", "slot7Expired"]
+        },
+        "notes": "Status with active alerts"
+      }
+    ],
+    "version_response": [
+      {
+        "name": "Short Eros VersionResponse",
+        "source": "MessageTests.swift testParsingShortErosVersionResponse()",
+        "operation": "decode",
+        "block_hex": "011502070002070002020000a64000097c279c1f08ced2",
+        "expected": {
+          "firmware_version": "2.7.0",
+          "i_firmware_version": "2.7.0",
+          "lot": 42560,
+          "tid": 621607,
+          "address": "0x1f08ced2",
+          "product_id": "eros",
+          "pod_progress_status": "reminderInitialized",
+          "gain": 2,
+          "rssi": 28
+        },
+        "notes": "Short form Eros version response (23 bytes)"
+      },
+      {
+        "name": "Long Eros VersionResponse",
+        "source": "MessageTests.swift testParsingLongErosVersionResponse()",
+        "operation": "decode",
+        "message_hex": "ffffffff041d011b13881008340a5002070002070002030000a62b000447941f00ee878352",
+        "expected": {
+          "firmware_version": "2.7.0",
+          "i_firmware_version": "2.7.0",
+          "lot": 42539,
+          "tid": 280468,
+          "address": "0x1f00ee87",
+          "product_id": "eros",
+          "pod_progress_status": "pairingCompleted"
+        },
+        "notes": "Long form Eros version response with full constants (29 bytes)"
+      },
+      {
+        "name": "Short DASH VersionResponse",
+        "source": "MessageTests.swift testParsingShortDashVersionResponse()",
+        "operation": "decode",
+        "block_hex": "0115031b0008080004020812a011000c175700ffffffff",
+        "expected": {
+          "firmware_version": "3.27.0",
+          "i_firmware_version": "8.8.0",
+          "lot": 135438353,
+          "tid": 792407,
+          "address": "0xffffffff",
+          "product_id": "dash",
+          "pod_progress_status": "reminderInitialized",
+          "gain": 0,
+          "rssi": 0
+        },
+        "notes": "Short form DASH version response - address 0xffffffff before pairing"
+      },
+      {
+        "name": "Long DASH VersionResponse",
+        "source": "MessageTests.swift testParsingLongDashVersionResponse()",
+        "operation": "decode",
+        "message_hex": "ffffffff0c1d011b13881008340a50031b0008080004030812a011000c175717244389816c",
+        "expected": {
+          "firmware_version": "3.27.0",
+          "i_firmware_version": "8.8.0",
+          "lot": 135438353,
+          "tid": 792407,
+          "address": "0x17244389",
+          "product_id": "dash",
+          "pod_progress_status": "pairingCompleted"
+        },
+        "notes": "Long form DASH version response after pairing"
+      },
+      {
+        "name": "VersionResponse Pairing Expired",
+        "source": "MessageTests.swift testParsingConfigWithPairingExpired()",
+        "operation": "decode",
+        "message_hex": "ffffffff04170115020700020700020e0000a5ad00053030971f08686301fd",
+        "expected": {
+          "firmware_version": "2.7.0",
+          "i_firmware_version": "2.7.0",
+          "lot": 42413,
+          "tid": 340016,
+          "address": "0x1f086863",
+          "product_id": "eros",
+          "pod_progress_status": "activationTimeExceeded",
+          "gain": 2,
+          "rssi": 23
+        },
+        "notes": "Pod with expired pairing window"
+      }
+    ],
+    "assign_address_command": [
+      {
+        "name": "AssignAddressCommand Encode/Decode",
+        "source": "MessageTests.swift testAssignAddressCommand()",
+        "operation": "encode_decode",
+        "inputs": {
+          "address": "0x1f01482a"
+        },
+        "expected_hex": "07041f01482a",
+        "notes": "Assigns PDM address to new pod"
+      }
+    ],
+    "setup_pod_command": [
+      {
+        "name": "SetupPodCommand Encode/Decode",
+        "source": "MessageTests.swift testSetupPodCommand()",
+        "operation": "encode_decode",
+        "hex": "03131f0218c31404060c100d2f0000a4be0004e4a1",
+        "expected": {
+          "address": "0x1f0218c3",
+          "date": {
+            "year": 2016,
+            "month": 6,
+            "day": 12,
+            "hour": 13,
+            "minute": 47
+          },
+          "lot": 42174,
+          "tid": 320673
+        },
+        "notes": "Initial pod setup with date/time"
+      }
+    ],
+    "set_insulin_schedule_command": [
+      {
+        "name": "Prime Command",
+        "source": "MessageTests.swift testPrime()",
+        "operation": "decode",
+        "hex": "1a0ebed2e16b02010a0101a000340034",
+        "expected": {
+          "nonce": "0xbed2e16b",
+          "delivery_type": "bolus",
+          "units": 2.6,
+          "time_between_pulses_seconds": 8,
+          "table_entries": [
+            {"segments": 1, "pulses": 52, "alternate_segment_pulse": false}
+          ]
+        },
+        "notes": "Prime delivery command (2.6 units at 8 sec/pulse)"
+      },
+      {
+        "name": "Cannula Insert Command",
+        "source": "MessageTests.swift testInsertCannula()",
+        "operation": "decode",
+        "hex": "1a0e7e30bf16020065010050000a000a",
+        "expected": {
+          "nonce": "0x7e30bf16",
+          "delivery_type": "bolus",
+          "units": 0.5,
+          "time_between_pulses_seconds": 8,
+          "table_entries": [
+            {"segments": 1, "pulses": 10, "alternate_segment_pulse": false}
+          ]
+        },
+        "notes": "Cannula insertion command (0.5 units)"
+      }
+    ],
+    "configure_alerts_command": [
+      {
+        "name": "ConfigureAlertsCommand Full",
+        "source": "MessageTests.swift testConfigureAlertsCommand()",
+        "operation": "encode",
+        "inputs": {
+          "nonce": "0xfeb6268b",
+          "configurations": [
+            {
+              "slot": 0,
+              "active": false,
+              "duration_minutes": 15,
+              "trigger_type": "timeUntilAlert",
+              "trigger_value_minutes": 0,
+              "beep_repeat": "every1MinuteFor15Minutes",
+              "beep_type": "bipBeepBipBeepBipBeepBipBeep",
+              "auto_off_modifier": true
+            },
+            {
+              "slot": 2,
+              "active": true,
+              "duration_minutes": 0,
+              "trigger_type": "timeUntilAlert",
+              "trigger_value_minutes": 4739,
+              "beep_repeat": "every15Minutes",
+              "beep_type": "bipBeepBipBeepBipBeepBipBeep"
+            },
+            {
+              "slot": 7,
+              "active": true,
+              "duration_minutes": 420,
+              "trigger_type": "timeUntilAlert",
+              "trigger_value_minutes": 4319,
+              "beep_repeat": "every60Minutes",
+              "beep_type": "bipBeepBipBeepBipBeepBipBeep"
+            }
+          ]
+        },
+        "expected_hex": "1916feb6268b020f0000020228001283060279a410df0502",
+        "notes": "Configure auto-off, shutdown imminent, and expiration alerts"
+      },
+      {
+        "name": "ConfigureAlertsCommand Decode",
+        "source": "MessageTests.swift testConfigureAlertsCommand()",
+        "operation": "decode",
+        "hex": "1916feb6268b79a410df0502280012830602020f00000202",
+        "expected": {
+          "nonce": "0xfeb6268b",
+          "num_configurations": 3,
+          "first_config": {
+            "slot": 7,
+            "active": true,
+            "duration_hours": 7,
+            "trigger_type": "timeUntilAlert"
+          }
+        },
+        "notes": "Same command, different ordering"
+      },
+      {
+        "name": "LowReservoir AlertConfiguration",
+        "source": "MessageTests.swift testConfigureAlertsCommand()",
+        "operation": "decode",
+        "hex": "4c0000640102",
+        "expected": {
+          "slot": 4,
+          "active": true,
+          "auto_off_modifier": false,
+          "duration_minutes": 0,
+          "trigger_type": "unitsRemaining",
+          "trigger_value_units": 10,
+          "beep_repeat": "every1MinuteFor3MinutesAndRepeatEvery60Minutes",
+          "beep_type": "bipBeepBipBeepBipBeepBipBeep"
+        },
+        "notes": "Low reservoir alert (10 units)"
+      }
+    ],
+    "message_packet": [
+      {
+        "name": "Encrypted MessagePacket Parse",
+        "source": "MessagePacketTests.swift testParseMessagePacket()",
+        "operation": "decode",
+        "hex": "545711010700034008202ea808202ea9ab35d8316009bb8fe3a3bde5b1837249a16dbf8e4d305e975dc817c3707cc415faf8a0",
+        "expected": {
+          "type": "ENCRYPTED",
+          "source_id": 136326824,
+          "destination_id": 136326825,
+          "sequence_number": 7,
+          "ack_number": 0,
+          "eqos": 1,
+          "priority": false,
+          "last_message": false,
+          "gateway": false,
+          "sas": true,
+          "tfs": false,
+          "version": 0
+        },
+        "payload_starts_at_byte": 16,
+        "notes": "BLE transport layer packet parsing"
+      }
+    ]
+  },
+  "python_compat": {
+    "description": "Python parsing logic for Omnipod messages",
+    "code": "import struct\n\ndef parse_message(data: bytes) -> dict:\n    if len(data) < 6:\n        return None\n    address = struct.unpack('>I', data[0:4])[0]\n    control = data[4]\n    sequence_num = (control >> 2) & 0x1f\n    length = data[5]\n    return {\n        'address': address,\n        'sequence_num': sequence_num,\n        'length': length,\n        'blocks_data': data[6:6+length].hex()\n    }\n\ndef parse_message_block(data: bytes) -> dict:\n    if len(data) < 2:\n        return None\n    block_type = data[0]\n    length = data[1]\n    return {\n        'block_type': hex(block_type),\n        'length': length,\n        'payload': data[2:2+length].hex() if len(data) > 2 else ''\n    }\n\ndef parse_status_response(data: bytes) -> dict:\n    # Block type 0x1d\n    if len(data) < 10 or data[0] != 0x1d:\n        return None\n    # Status response format from OmniBLE StatusResponse.swift\n    byte1 = data[2]\n    byte2 = data[3]\n    byte3 = data[4]\n    byte4 = data[5]\n    byte5 = data[6]\n    byte6 = data[7]\n    byte7 = data[8]\n    return {\n        'block_type': '0x1d',\n        'delivery_status': byte1 >> 4,\n        'pod_progress_status': byte1 & 0x0f,\n        'raw_bytes': data[2:].hex()\n    }",
+    "notes": "Basic parsing - full implementation requires MessageBlock subclass handling"
+  },
+  "alert_slots": {
+    "0": "AutoOff",
+    "1": "MultiCommand (unused)",
+    "2": "ShutdownImminent (79 hours)",
+    "3": "ExpirationReminder (72 hours)",
+    "4": "LowReservoir",
+    "5": "SuspendInProgress",
+    "6": "SuspendEnded",
+    "7": "Expired (72 hours)"
+  },
+  "constants": {
+    "pod_pulse_size": 0.05,
+    "seconds_per_bolus_pulse": 2,
+    "seconds_per_prime_pulse": 8,
+    "prime_units": 2.6,
+    "cannula_insertion_units": 0.5,
+    "service_duration_hours": 80,
+    "eros_product_id": 2,
+    "dash_product_id": 4
+  }
+}

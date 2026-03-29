@@ -1,0 +1,273 @@
+{
+  "session_id": "SESSION-LIBRE-TIMEOUT-001",
+  "session_name": "FreeStyle Libre 2/3 Timeout Scenarios",
+  "description": "Synthesized timeout conditions for Libre BLE connection flow. Used for testing retry logic and timeout handling.",
+  "source": "Synthesized from Libre2Manager.swift and LibreFaultInjector.swift specifications",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+  "trace": "LIBRE-FIX-014",
+  "created": "2026-02-16",
+
+  "timing_specs": {
+    "scan_timeout_s": 30.0,
+    "connection_timeout_s": 10.0,
+    "unlock_timeout_s": 5.0,
+    "write_timeout_s": 2.0,
+    "command_timeout_s": 2.0,
+    "service_discovery_timeout_s": 5.0,
+    "source": "packages/CGMKit/Sources/CGMKit/Libre2/Libre2Manager.swift"
+  },
+
+  "timeout_scenarios": [
+    {
+      "scenario_id": "TIMEOUT-001",
+      "name": "Scan timeout - no sensor found",
+      "description": "No Libre sensor advertisement detected within scan window",
+      "trigger_state": "scanning",
+      "timeout_after_s": 30.0,
+      "fault_type": "scanTimeout",
+      "error": {
+        "type": "CGMError.sensorNotFound",
+        "message": "No FreeStyle Libre sensor found",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "scanning → idle",
+        "callback": "onScanTimeout()",
+        "retry_strategy": "User-initiated rescan"
+      },
+      "test_setup": {
+        "mock_action": "Return empty scan results until timeout",
+        "mock_duration_s": 30.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-002",
+      "name": "Connection timeout",
+      "description": "BLE connection to peripheral fails to establish",
+      "trigger_state": "connecting",
+      "timeout_after_s": 10.0,
+      "fault_type": "connectionTimeout",
+      "error": {
+        "type": "CGMError.connectionFailed",
+        "message": "Failed to connect to sensor",
+        "ble_error_code": "CBError.connectionTimeout",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onConnectionFailed(error:)",
+        "retry_strategy": "Automatic retry with backoff"
+      },
+      "test_setup": {
+        "mock_action": "Never call centralManager:didConnect:peripheral",
+        "mock_duration_s": 10.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-003",
+      "name": "Service discovery timeout",
+      "description": "Peripheral connected but services not discovered",
+      "trigger_state": "connecting",
+      "timeout_after_s": 5.0,
+      "fault_type": "connectionTimeout",
+      "error": {
+        "type": "CGMError.serviceDiscoveryFailed",
+        "message": "Failed to discover Libre service",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onServiceDiscoveryFailed()",
+        "retry_strategy": "Disconnect and retry connection"
+      },
+      "test_setup": {
+        "mock_action": "Connect but never call peripheral:didDiscoverServices:",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-004",
+      "name": "Unlock timeout",
+      "description": "No response to unlock command during BLE authentication",
+      "trigger_state": "unlocking",
+      "timeout_after_s": 5.0,
+      "fault_type": "unlockTimeout",
+      "tx_sent": {
+        "command": "unlock",
+        "description": "Encrypted unlock payload with unlock count"
+      },
+      "error": {
+        "type": "CGMError.authenticationTimeout",
+        "message": "Unlock timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "unlocking → error",
+        "callback": "onUnlockTimeout()",
+        "retry_strategy": "Disconnect and reconnect with incremented unlock count"
+      },
+      "test_setup": {
+        "mock_action": "Write unlock command, never send notification response",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-005",
+      "name": "Glucose request timeout",
+      "description": "No response to glucose reading request after unlock",
+      "trigger_state": "streaming",
+      "timeout_after_s": 2.0,
+      "fault_type": "connectionTimeout",
+      "tx_sent": {
+        "command": "readGlucose",
+        "description": "Request current glucose data"
+      },
+      "error": {
+        "type": "CGMError.commandTimeout",
+        "message": "Glucose request timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "streaming (retry) → streaming or error",
+        "callback": "onCommandTimeout()",
+        "retry_strategy": "Retry command up to 3 times"
+      },
+      "test_setup": {
+        "mock_action": "Unlock successfully, write glucose request, never send response",
+        "mock_duration_s": 2.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-006",
+      "name": "Historic data fetch timeout",
+      "description": "Timeout while fetching historic glucose data from sensor memory",
+      "trigger_state": "streaming",
+      "timeout_after_s": 10.0,
+      "fault_type": "connectionTimeout",
+      "tx_sent": {
+        "command": "readHistory",
+        "description": "Request historic trend data"
+      },
+      "error": {
+        "type": "CGMError.commandTimeout",
+        "message": "Historic data fetch timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "streaming → streaming (degraded)",
+        "callback": "onHistoricDataTimeout()",
+        "retry_strategy": "Continue with current reading only"
+      },
+      "test_setup": {
+        "mock_action": "Start history fetch, never complete transfer",
+        "mock_duration_s": 10.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-007",
+      "name": "NFC activation required timeout",
+      "description": "BLE connection attempted on sensor that hasn't been NFC activated",
+      "trigger_state": "connecting",
+      "timeout_after_s": 5.0,
+      "fault_type": "nfcRequired",
+      "error": {
+        "type": "CGMError.sensorNotActivated",
+        "message": "Sensor must be NFC activated first",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onNFCRequired()",
+        "retry_strategy": "Prompt user to scan sensor with NFC"
+      },
+      "test_setup": {
+        "mock_action": "Detect sensor but unlock fails with NFC-required response",
+        "mock_duration_s": 5.0
+      }
+    }
+  ],
+
+  "retry_configuration": {
+    "max_connection_retries": 3,
+    "max_unlock_retries": 2,
+    "max_command_retries": 3,
+    "retry_delay_s": 2.0,
+    "exponential_backoff": true,
+    "backoff_multiplier": 2.0,
+    "source": "packages/CGMKit/Sources/CGMKit/Libre2/Libre2Manager.swift"
+  },
+
+  "test_vectors": [
+    {
+      "name": "Timeout error construction",
+      "scenario": "TIMEOUT-004",
+      "expected_fault_type": "unlockTimeout",
+      "expected_message": "Unlock timed out"
+    },
+    {
+      "name": "State machine on timeout",
+      "initial_state": "unlocking",
+      "timeout_event": "unlock_timeout",
+      "expected_state": "error",
+      "cleanup_actions": ["cancelPendingWrite", "disconnectPeripheral", "incrementUnlockCount"]
+    },
+    {
+      "name": "Retry count tracking",
+      "scenario": "TIMEOUT-002",
+      "retry_sequence": [
+        { "attempt": 1, "result": "timeout", "delay_before_next_s": 2.0 },
+        { "attempt": 2, "result": "timeout", "delay_before_next_s": 4.0 },
+        { "attempt": 3, "result": "timeout", "delay_before_next_s": null }
+      ],
+      "final_state": "error",
+      "final_error": "CGMError.connectionFailed(retries: 3)"
+    }
+  ],
+
+  "libre_specific_considerations": [
+    {
+      "name": "Unlock count persistence",
+      "description": "Unlock count must be persisted across app restarts to prevent desync",
+      "handling": "Store unlockCount in Keychain, increment on each connection attempt"
+    },
+    {
+      "name": "NFC activation dependency",
+      "description": "Libre 2/3 requires NFC scan before BLE streaming works",
+      "handling": "Store sensorInfo from NFC scan, use for BLE authentication"
+    },
+    {
+      "name": "Sensor replacement detection",
+      "description": "New sensor UID detected should clear unlock count",
+      "handling": "Compare UID on connection, reset unlockCount if different"
+    },
+    {
+      "name": "14-day sensor life",
+      "description": "Sensor expires after 14 days, timeout may be permanent",
+      "handling": "Check sensor age, show expiration warning if close to 14 days"
+    }
+  ],
+
+  "edge_cases": [
+    {
+      "name": "Timeout during unlock write",
+      "description": "BLE write operation times out mid-transfer",
+      "handling": "Cancel write, increment unlock count, retry"
+    },
+    {
+      "name": "Timeout after partial glucose data",
+      "description": "Received partial glucose frame before timeout",
+      "handling": "Discard partial data, retry full request"
+    },
+    {
+      "name": "System sleep during streaming",
+      "description": "Device sleeps during BLE operation",
+      "handling": "Detect disconnect on wake, reconnect automatically"
+    },
+    {
+      "name": "Region mismatch timeout",
+      "description": "Sensor firmware doesn't respond to unlock (wrong region)",
+      "handling": "Detect repeated unlock failures, suggest region-compatible app"
+    }
+  ]
+}

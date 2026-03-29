@@ -1,0 +1,80 @@
+{
+  "metadata": {
+    "created": "2026-02-06",
+    "source": "externals/logs/chunks/ble.log",
+    "analysis": "DDFB-007",
+    "description": "Error and warning events from device session for edge case testing"
+  },
+  "pump_communication_errors": [
+    {
+      "timestamp": "2026-02-05 15:09:53.731",
+      "subsystem": "Loop{MinimedKit}",
+      "level": "ERROR",
+      "message": "Failed to fetch pump status",
+      "error_chain": [
+        "MinimedKit.PumpOpsError.deviceError",
+        "RileyLinkBLEKit.RileyLinkDeviceError.responseTimeout"
+      ],
+      "recovery": "Session queue operation cleared, next session scheduled"
+    },
+    {
+      "timestamp": "2026-02-05 15:09:53.732",
+      "subsystem": "Loop{Loop}",
+      "level": "ERROR", 
+      "message": "PumpManager:MinimedPumpManager did error",
+      "error_type": "communication",
+      "wrapped_error": "MinimedKit.PumpCommandError.arguments"
+    }
+  ],
+  "ble_timeouts": [
+    {
+      "timestamp": "2026-02-05 15:09:52.365",
+      "response_code": "RileyLinkBLEKit.ResponseCode.rxTimeout",
+      "packet": null,
+      "retry_attempted": true
+    },
+    {
+      "timestamp": "2026-02-05 15:09:53.731",
+      "response_code": "RileyLinkBLEKit.ResponseCode.rxTimeout",
+      "packet": null,
+      "final_failure": true
+    }
+  ],
+  "system_errors": [
+    {
+      "timestamp": "2026-02-05 15:09:47.643",
+      "subsystem": "thermalmonitord",
+      "level": "ERROR",
+      "message": "could not find `cpu-avg-limiter-input-w2r property",
+      "frequency": "Every 5 seconds",
+      "impact": "None - system-level, not app-related"
+    }
+  ],
+  "edge_cases_for_testing": [
+    {
+      "scenario": "RileyLink timeout during pump status fetch",
+      "mock_setup": "Return rxTimeout after 2 retries",
+      "expected_behavior": "PumpManager reports communication error, clears queue"
+    },
+    {
+      "scenario": "Multiple consecutive timeouts",
+      "mock_setup": "Return rxTimeout for all attempts",
+      "expected_behavior": "Session fails, next session scheduled"
+    },
+    {
+      "scenario": "Pump status fetch during temp basal",
+      "mock_setup": "Interleave Get Pump Status and Set Temp Basal",
+      "expected_behavior": "Sessions queued and executed in order"
+    }
+  ],
+  "error_handling_patterns": {
+    "error_propagation": "Device error → PumpOpsError → PumpCommandError → PumpManager",
+    "logging_format": "Subsystem{Framework}[PID] <LEVEL>: message",
+    "recovery_strategy": "Clear operation, schedule next"
+  },
+  "test_fixture_usage": {
+    "timeout_test": "Use ble_timeouts for MockRileyLink timeout simulation",
+    "error_chain_test": "Use pump_communication_errors for error propagation tests",
+    "resilience_test": "Use edge_cases_for_testing for recovery behavior validation"
+  }
+}

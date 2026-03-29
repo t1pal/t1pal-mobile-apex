@@ -1,0 +1,295 @@
+{
+  "test_name": "wakeup_sequence",
+  "pump_serial": "208850",
+  "frequency_mhz": 916.5,
+  "timestamp": "2026-02-11T11:03:11.972320",
+  "packets": [
+    {
+      "timestamp": "2026-02-11T11:02:51.221275",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "01 0d",
+      "parsed": {
+        "command": "RESET_RADIO_CONFIG",
+        "opcode": "0x0D"
+      },
+      "notes": "Reset radio to defaults"
+    },
+    {
+      "timestamp": "2026-02-11T11:02:52.083378",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd",
+        "length": 1
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:02:52.184618",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "03 06 0d 00",
+      "parsed": {
+        "command": "UPDATE_REGISTER",
+        "opcode": "0x06",
+        "register": "FREQ0",
+        "value": "0x00"
+      },
+      "notes": "Set FREQ0"
+    },
+    {
+      "timestamp": "2026-02-11T11:02:53.058225",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd",
+        "length": 1
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:02:53.108638",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "03 06 0e 30",
+      "parsed": {
+        "command": "UPDATE_REGISTER",
+        "opcode": "0x06",
+        "register": "FREQ1",
+        "value": "0x30"
+      },
+      "notes": "Set FREQ1"
+    },
+    {
+      "timestamp": "2026-02-11T11:02:53.936299",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd",
+        "length": 1
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:02:53.986701",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "03 06 0f 26",
+      "parsed": {
+        "command": "UPDATE_REGISTER",
+        "opcode": "0x06",
+        "register": "FREQ2",
+        "value": "0x26"
+      },
+      "notes": "Set FREQ2"
+    },
+    {
+      "timestamp": "2026-02-11T11:02:54.813141",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd",
+        "length": 1
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:02:54.864509",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "19 05 00 ff 00 00 00 00 00 2e e0 00 00 00 a9 6c 95 69 a9 55 94 d5 55 ca 50 00",
+      "parsed": {
+        "command": "SEND_AND_LISTEN",
+        "opcode": "0x05",
+        "send_channel": 0,
+        "repeat_count": 255,
+        "delay_ms": 0,
+        "listen_channel": 0,
+        "timeout_ms": 12000,
+        "retries": 0,
+        "preamble_ms": 0,
+        "rf_data_len": 12,
+        "rf_data_hex": "a9 6c 95 69 a9 55 94 d5 55 ca 50 00",
+        "notes": "Wakeup burst - 256 repeats, 12s timeout",
+        "medtronic": {
+          "packet_type": "0xA7 (Carelink)",
+          "serial": "208850",
+          "serial_bytes": "20 88 50",
+          "message_type": "0x5D",
+          "body": "00",
+          "crc": "0x25",
+          "raw_packet": "a7 20 88 50 5d 00 25",
+          "message_type_name": "powerOn (wakeup burst)"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:03:07.391162",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd ba 0b a9 6c 95 69 a9 55 56 65 55 68 e5",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd ba 0b a9 6c 95 69 a9 55 56 65 55 68 e5",
+        "length": 14,
+        "rssi_raw": 186,
+        "rssi_dbm": -108.0,
+        "packet_counter": 11,
+        "rf_data_hex": "a9 6c 95 69 a9 55 56 65 55 68 e5",
+        "rf_data_len": 11,
+        "decoded_hex": "a7 20 88 50 06 00 8e",
+        "decoded_len": 7,
+        "medtronic": {
+          "packet_type": "0xA7",
+          "serial": "208850",
+          "message_type": "0x06"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:03:07.391376",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "79 05 00 00 00 00 00 00 00 00 c8 03 00 00 a9 6c 95 69 a9 55 94 d5 72 57 15 71 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 b2 50 00",
+      "parsed": {
+        "command": "SEND_AND_LISTEN",
+        "opcode": "0x05",
+        "send_channel": 0,
+        "repeat_count": 0,
+        "delay_ms": 0,
+        "listen_channel": 0,
+        "timeout_ms": 200,
+        "retries": 3,
+        "preamble_ms": 0,
+        "rf_data_len": 108,
+        "rf_data_hex": "a9 6c 95 69 a9 55 94 d5 72 57 15 71 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 b2 50 00",
+        "medtronic": {
+          "packet_type": "0xA7 (Carelink)",
+          "serial": "208850",
+          "serial_bytes": "20 88 50",
+          "message_type": "0x5D",
+          "body": "02 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "crc": "0xC5",
+          "raw_packet": "a7 20 88 50 5d 02 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 c5",
+          "message_type_name": "powerOn (with duration)",
+          "duration_minutes": 1,
+          "body_format": "02 01 01 + 62 zeros"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:03:08.366373",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd b8 0c a9 6c 95 69 a9 55 56 65 55 68 e5",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd b8 0c a9 6c 95 69 a9 55 56 65 55 68 e5",
+        "length": 14,
+        "rssi_raw": 184,
+        "rssi_dbm": -109.0,
+        "packet_counter": 12,
+        "rf_data_hex": "a9 6c 95 69 a9 55 56 65 55 68 e5",
+        "rf_data_len": 11,
+        "decoded_hex": "a7 20 88 50 06 00 8e",
+        "decoded_len": 7,
+        "medtronic": {
+          "packet_type": "0xA7",
+          "serial": "208850",
+          "message_type": "0x06"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:03:08.366550",
+      "direction": "tx",
+      "layer": "ble",
+      "raw_hex": "19 05 00 00 00 00 00 00 00 00 c8 03 00 00 a9 6c 95 69 a9 55 68 d5 55 c8 b0 00",
+      "parsed": {
+        "command": "SEND_AND_LISTEN",
+        "opcode": "0x05",
+        "send_channel": 0,
+        "repeat_count": 0,
+        "delay_ms": 0,
+        "listen_channel": 0,
+        "timeout_ms": 200,
+        "retries": 3,
+        "preamble_ms": 0,
+        "rf_data_len": 12,
+        "rf_data_hex": "a9 6c 95 69 a9 55 68 d5 55 c8 b0 00",
+        "medtronic": {
+          "packet_type": "0xA7 (Carelink)",
+          "serial": "208850",
+          "serial_bytes": "20 88 50",
+          "message_type": "0x8D",
+          "body": "00",
+          "crc": "0x2B",
+          "raw_packet": "a7 20 88 50 8d 00 2b",
+          "message_type_name": "getPumpModel"
+        }
+      },
+      "notes": ""
+    },
+    {
+      "timestamp": "2026-02-11T11:03:09.248231",
+      "direction": "rx",
+      "layer": "ble",
+      "raw_hex": "dd ba 0d a9 6c 95 69 a9 55 68 d5 59 56 38 e5 8f 18 e5 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 9b 15",
+      "parsed": {
+        "status_byte": "0xDD",
+        "status_name": "SUCCESS",
+        "success": true,
+        "raw_hex": "dd ba 0d a9 6c 95 69 a9 55 68 d5 59 56 38 e5 8f 18 e5 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 9b 15",
+        "length": 110,
+        "rssi_raw": 186,
+        "rssi_dbm": -108.0,
+        "packet_counter": 13,
+        "rf_data_hex": "a9 6c 95 69 a9 55 68 d5 59 56 38 e5 8f 18 e5 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 55 9b 15",
+        "rf_data_len": 107,
+        "decoded_hex": "a7 20 88 50 8d 09 03 35 31 35 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 61",
+        "decoded_len": 71,
+        "medtronic": {
+          "packet_type": "0xA7",
+          "serial": "208850",
+          "message_type": "0x8D",
+          "body_preview": "09 03 35 31 35 00 00 00 00 00",
+          "model": "515"
+        }
+      },
+      "notes": ""
+    }
+  ],
+  "success": true,
+  "result": {
+    "packet_type": "0xA7",
+    "serial": "208850",
+    "message_type": "0x8D",
+    "body_preview": "09 03 35 31 35 00 00 00 00 00",
+    "model": "515"
+  }
+}

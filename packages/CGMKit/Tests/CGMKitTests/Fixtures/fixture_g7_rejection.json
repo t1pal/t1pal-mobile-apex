@@ -1,0 +1,295 @@
+{
+  "session_id": "SESSION-G7-REJECTION-001",
+  "session_name": "Dexcom G7 Rejection Scenarios",
+  "description": "Synthesized rejection/failure conditions for G7 BLE authentication. Used for testing error handling when sensor rejects connection.",
+  "source": "Synthesized from fixture_g7_connect.json error_handling specifications",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+  "trace": "G7-FIX-015",
+  "created": "2026-02-16",
+
+  "rejection_scenarios": [
+    {
+      "scenario_id": "REJECT-001",
+      "name": "Wrong sensor code",
+      "description": "J-PAKE confirmation fails due to incorrect 4-digit sensor code",
+      "trigger_state": "authenticating",
+      "trigger_step": 11,
+      "rx_message": {
+        "opcode": "0x05",
+        "opcode_name": "AuthStatus",
+        "raw_hex": "05 01",
+        "fields": {
+          "status": 1,
+          "status_meaning": "AUTH_FAILED"
+        }
+      },
+      "error": {
+        "type": "CGMError.invalidSensorCode",
+        "message": "Sensor code mismatch - authentication failed",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "authenticating → error",
+        "callback": "onCodeMismatch()",
+        "user_action_required": "Enter correct sensor code",
+        "retry_strategy": "updateSensorCode(newCode) and reconnect"
+      },
+      "test_setup": {
+        "mock_action": "Complete Round 1-2, send AuthStatus(0x01) instead of AuthConfirm",
+        "wrong_code": "9999",
+        "correct_code": "1234"
+      }
+    },
+    {
+      "scenario_id": "REJECT-002",
+      "name": "Sensor already paired",
+      "description": "Sensor is already paired to another transmitter/phone",
+      "trigger_state": "pairing",
+      "trigger_step": 5,
+      "rx_message": {
+        "opcode": "0x05",
+        "opcode_name": "AuthStatus",
+        "raw_hex": "05 02",
+        "fields": {
+          "status": 2,
+          "status_meaning": "ALREADY_PAIRED"
+        }
+      },
+      "error": {
+        "type": "CGMError.sensorAlreadyPaired",
+        "message": "Sensor is paired to another device",
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "pairing → error",
+        "callback": "onPairingRejected(reason: .alreadyPaired)",
+        "user_action_required": "Reset sensor pairing in Dexcom app or wait for sensor expiry"
+      },
+      "test_setup": {
+        "mock_action": "Send AuthStatus(0x02) immediately after Round 1 TX"
+      }
+    },
+    {
+      "scenario_id": "REJECT-003",
+      "name": "Sensor expired",
+      "description": "Sensor has exceeded 10.5-day lifetime",
+      "trigger_state": "streaming",
+      "trigger_step": 14,
+      "rx_message": {
+        "opcode": "0x21",
+        "opcode_name": "SensorInfoRx",
+        "raw_hex": "21 00 00 00 00 FF FF FF FF 03 00",
+        "fields": {
+          "sensor_state": 3,
+          "state_meaning": "EXPIRED",
+          "remaining_minutes": 0
+        }
+      },
+      "error": {
+        "type": "CGMError.sensorExpired",
+        "message": "Sensor session has expired",
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "streaming → disconnecting",
+        "callback": "onSensorExpired()",
+        "user_action_required": "Replace sensor"
+      },
+      "test_setup": {
+        "mock_action": "Authenticate successfully, return SensorInfo with state=EXPIRED"
+      }
+    },
+    {
+      "scenario_id": "REJECT-004",
+      "name": "Sensor in warmup",
+      "description": "Sensor is still in 27-minute warmup period",
+      "trigger_state": "streaming",
+      "trigger_step": 14,
+      "rx_message": {
+        "opcode": "0x21",
+        "opcode_name": "SensorInfoRx",
+        "raw_hex": "21 15 00 00 00 00 00 00 00 01 00",
+        "fields": {
+          "sensor_state": 1,
+          "state_meaning": "WARMUP",
+          "remaining_warmup_minutes": 21
+        }
+      },
+      "error": {
+        "type": "CGMError.sensorWarmup",
+        "message": "Sensor warming up, 21 minutes remaining",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "streaming (continue monitoring)",
+        "callback": "onWarmupProgress(remainingMinutes: 21)",
+        "retry_strategy": "Continue polling until warmup complete"
+      },
+      "test_setup": {
+        "mock_action": "Return SensorInfo with state=WARMUP and countdown"
+      }
+    },
+    {
+      "scenario_id": "REJECT-005",
+      "name": "ZKP verification failure",
+      "description": "Zero-knowledge proof validation fails during J-PAKE",
+      "trigger_state": "pairing",
+      "trigger_step": 6,
+      "validation_failure": {
+        "field": "zkp3",
+        "reason": "Commitment hash mismatch",
+        "expected_length": 80,
+        "received_length": 80,
+        "commitment_valid": false
+      },
+      "error": {
+        "type": "CGMError.cryptoValidationFailed",
+        "message": "J-PAKE zero-knowledge proof validation failed",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "pairing → error",
+        "callback": "onAuthFailed(reason: .zkpValidation)",
+        "retry_strategy": "Disconnect and retry connection"
+      },
+      "test_setup": {
+        "mock_action": "Send Round 1 response with invalid ZKP structure"
+      }
+    },
+    {
+      "scenario_id": "REJECT-006",
+      "name": "Bluetooth connection rejected",
+      "description": "Peripheral actively rejects BLE connection",
+      "trigger_state": "connecting",
+      "ble_error": {
+        "code": "CBError.peripheralDisconnected",
+        "reason": "Connection rejected by peripheral"
+      },
+      "error": {
+        "type": "CGMError.connectionRejected",
+        "message": "Sensor rejected connection",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onConnectionRejected()",
+        "retry_strategy": "Wait and retry with backoff"
+      },
+      "test_setup": {
+        "mock_action": "Call centralManager:didFailToConnect: with rejection error"
+      }
+    },
+    {
+      "scenario_id": "REJECT-007",
+      "name": "Confirmation hash mismatch",
+      "description": "Sensor confirmation hash doesn't match expected value",
+      "trigger_state": "authenticating",
+      "trigger_step": 11,
+      "rx_message": {
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "raw_hex": "04 00112233445566778899aabbccddeeff",
+        "fields": {
+          "confirm_hash": "00112233445566778899aabbccddeeff"
+        }
+      },
+      "validation": {
+        "expected_hash_algorithm": "SHA256(K + \"responder\" + \"G7-CONFIRM\")[0:16]",
+        "received_matches_expected": false,
+        "indicates": "Key derivation mismatch (likely wrong sensor code)"
+      },
+      "error": {
+        "type": "CGMError.invalidSensorCode",
+        "message": "Key confirmation failed - sensor code incorrect",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "authenticating → error",
+        "callback": "onCodeMismatch()",
+        "user_action_required": "Enter correct sensor code"
+      },
+      "test_setup": {
+        "mock_action": "Return AuthConfirm with incorrect hash"
+      }
+    }
+  ],
+
+  "sensor_states": {
+    "0x00": { "name": "UNKNOWN", "can_stream": false },
+    "0x01": { "name": "WARMUP", "can_stream": false, "warmup_minutes": 27 },
+    "0x02": { "name": "OK", "can_stream": true },
+    "0x03": { "name": "EXPIRED", "can_stream": false },
+    "0x04": { "name": "FAILED", "can_stream": false },
+    "0x05": { "name": "STOPPED", "can_stream": false }
+  },
+
+  "sensor_states_source": "externals/G7SensorKit/G7SensorKit/G7CGMManager/G7Sensor.swift",
+
+  "auth_status_codes": {
+    "0x00": "AUTH_SUCCESS",
+    "0x01": "AUTH_FAILED",
+    "0x02": "ALREADY_PAIRED",
+    "0x03": "INVALID_MESSAGE",
+    "0x04": "UNKNOWN_ERROR"
+  },
+
+  "test_vectors": [
+    {
+      "name": "AuthStatus rejection parsing",
+      "input_hex": "0501",
+      "expected": {
+        "opcode": "0x05",
+        "status": 1,
+        "status_name": "AUTH_FAILED",
+        "is_success": false
+      }
+    },
+    {
+      "name": "SensorInfo expired parsing",
+      "input_hex": "210000000000000000030000",
+      "expected": {
+        "opcode": "0x21",
+        "sensor_state": 3,
+        "state_name": "EXPIRED",
+        "can_stream": false
+      }
+    },
+    {
+      "name": "Error callback sequence",
+      "scenario": "REJECT-001",
+      "callback_sequence": [
+        "onAuthRound2Complete()",
+        "onAuthConfirmSent()",
+        "onAuthConfirmReceived(hash: ...)",
+        "onConfirmationMismatch()",
+        "onCodeMismatch()"
+      ]
+    }
+  ],
+
+  "recovery_patterns": {
+    "code_mismatch": {
+      "steps": [
+        "Disconnect from sensor",
+        "Prompt user for correct code",
+        "Call updateSensorCode(newCode)",
+        "Reconnect and retry authentication"
+      ]
+    },
+    "already_paired": {
+      "steps": [
+        "Inform user sensor is paired to another device",
+        "Option 1: Reset sensor in Dexcom app",
+        "Option 2: Wait for sensor expiry and replace"
+      ]
+    },
+    "crypto_failure": {
+      "steps": [
+        "Log detailed error for debugging",
+        "Disconnect and retry connection",
+        "If persistent, report as firmware issue"
+      ]
+    }
+  }
+}

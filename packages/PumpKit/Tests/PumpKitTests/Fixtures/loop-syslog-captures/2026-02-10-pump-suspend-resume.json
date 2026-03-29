@@ -1,0 +1,91 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-10T19:34:45-08:00",
+    "source": "iOS syslog via idevicesyslog",
+    "app": "Loop (com.medicaldatanetworks.loop-denim.Loop)",
+    "rileyLink": {
+      "uuid": "AA800DC4-0C1F-B308-C85E-E966DC7CBC36",
+      "name": "OrangePro",
+      "firmware": "ble_rfspy 2.0"
+    },
+    "pump": {
+      "model": "Medtronic 515",
+      "serial": "208850"
+    },
+    "operations": ["suspend", "resume"],
+    "notes": "Captured while user suspended and resumed pump via Loop app during T1PalDemo testing"
+  },
+  "characteristics": {
+    "data": {
+      "uuid": "C842E849-5028-42E2-867C-016ADADA9155",
+      "handle": "0x0011"
+    },
+    "responseCount": {
+      "uuid": "6E6C7910-B89E-43A5-A0FE-50C5E2B81F4A",
+      "handle": "0x0014"
+    },
+    "firmwareVersion": {
+      "uuid": "30D99DC9-7C91-4295-A051-0A104D238CF2",
+      "handle": "0x001F",
+      "value": "626C655F726673707920322E30",
+      "decoded": "ble_rfspy 2.0"
+    }
+  },
+  "session": [
+    {
+      "timestamp": "19:35:04",
+      "operation": "sendAndListen",
+      "command": {
+        "hex": "DDD4B8A96C9569A95568D5595638E58F18E5555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555559B15",
+        "notes": "Long command with 0x55 padding - likely wakeup + suspend command"
+      },
+      "responseCount": "06"
+    },
+    {
+      "timestamp": "19:35:05",
+      "operation": "sendAndListen",
+      "response": {
+        "hex": "DD01A96C728F4571555CA300",
+        "notes": "Valid 4b6b encoded pump ACK (A7123401 + CRC)",
+        "decoded_message": "A71234010023"
+      },
+      "responseCount": "07"
+    },
+    {
+      "timestamp": "19:35:06",
+      "operation": "sendAndListen",
+      "response": {
+        "hex": "DDBCBAA96C9569A9555665556865",
+        "notes": "Pump response (4b6b encoded)"
+      },
+      "responseCount": "08"
+    },
+    {
+      "timestamp": "19:35:08",
+      "operation": "sendAndListen",
+      "response": {
+        "hex": "DDBABBA96C9569A9555665556865",
+        "notes": "Pump response (4b6b encoded)"
+      },
+      "responseCount": "09"
+    },
+    {
+      "timestamp": "19:35:09",
+      "operation": "sendAndListen",
+      "response": {
+        "hex": "DDBABCA96C9569A9555665556865",
+        "notes": "Pump response (4b6b encoded), responseCount=0x0A confirms completion"
+      },
+      "responseCount": "0A"
+    }
+  ],
+  "analysis": {
+    "pattern": "Loop uses subscribe-before-write pattern correctly",
+    "responseCountSequence": ["06", "07", "08", "09", "0A"],
+    "observations": [
+      "Each command triggers responseCount increment",
+      "Response is read from DATA characteristic after responseCount notification",
+      "Multiple command/response cycles for pump state change"
+    ]
+  }
+}

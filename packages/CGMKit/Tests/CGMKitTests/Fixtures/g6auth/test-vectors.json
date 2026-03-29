@@ -1,0 +1,80 @@
+{
+  "_comment": "G6 Authentication Test Vectors from CGMBLEKit",
+  "_source": "externals/CGMBLEKit/CGMBLEKitTests/TransmitterIDTests.swift",
+  "_updated": "2026-02-08",
+  
+  "keyDerivation": [
+    {
+      "description": "CGMBLEKit canonical test case",
+      "transmitterId": "123456",
+      "expectedKeyHex": "30303132333435363030313233343536",
+      "expectedKeyString": "00123456001234 56"
+    },
+    {
+      "description": "Alphanumeric ID",
+      "transmitterId": "80AB12",
+      "expectedKeyHex": "30303830414231323030383041423132",
+      "expectedKeyString": "0080AB120080AB12"
+    },
+    {
+      "description": "Numeric ID",
+      "transmitterId": "400000",
+      "expectedKeyHex": "30303430303030303030343030303030",
+      "expectedKeyString": "00400000004000 00"
+    }
+  ],
+  
+  "tokenHash": [
+    {
+      "description": "CGMBLEKit TransmitterIDTests.testComputeHash",
+      "source": "TransmitterIDTests.swift:17",
+      "transmitterId": "123456",
+      "tokenHex": "0123456789abcdef",
+      "expectedHashHex": "e60d4a7999b0fbb2"
+    }
+  ],
+  
+  "fullAuthFlow": [
+    {
+      "description": "Complete authentication sequence",
+      "transmitterId": "123456",
+      "clientToken": "0123456789abcdef",
+      "serverTokenHash": "e60d4a7999b0fbb2",
+      "serverChallenge": "fedcba9876543210",
+      "clientChallengeHash": "computed",
+      "_note": "Client verifies serverTokenHash, then sends hash of serverChallenge"
+    }
+  ],
+  
+  "messageEncoding": [
+    {
+      "description": "AuthRequestTx message",
+      "tokenHex": "0123456789abcdef",
+      "expectedMessageHex": "010123456789abcdef02"
+    },
+    {
+      "description": "AuthRequestRx message parsing",
+      "messageHex": "03e60d4a7999b0fbb2fedcba9876543210",
+      "expectedTokenHash": "e60d4a7999b0fbb2",
+      "expectedChallenge": "fedcba9876543210"
+    },
+    {
+      "description": "AuthChallengeRx authenticated and bonded",
+      "messageHex": "050101",
+      "expectedAuthenticated": true,
+      "expectedBonded": true
+    },
+    {
+      "description": "AuthChallengeRx authenticated not bonded",
+      "messageHex": "050100",
+      "expectedAuthenticated": true,
+      "expectedBonded": false
+    },
+    {
+      "description": "AuthChallengeRx not authenticated",
+      "messageHex": "050000",
+      "expectedAuthenticated": false,
+      "expectedBonded": false
+    }
+  ]
+}

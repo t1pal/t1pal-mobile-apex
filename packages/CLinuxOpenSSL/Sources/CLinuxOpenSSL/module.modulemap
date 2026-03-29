@@ -1,0 +1,6 @@
+module CLinuxOpenSSL [system] {
+    header "shim.h"
+    link "crypto"
+    link "ssl"
+    export *
+}

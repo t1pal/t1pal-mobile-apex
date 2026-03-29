@@ -1,0 +1,422 @@
+{
+  "_source": "OmniKit MessageTests.swift (Loop/Trio)",
+  "_task": "EROS-SYNTH-002",
+  "_description": "Test vectors for OmniPod Eros message encoding/decoding with CRC16",
+  "_format": {
+    "name": "Eros Message (OmniKit-compatible)",
+    "bytes[0-3]": "address (UInt32 big-endian)",
+    "byte[4]": "(expectFollowOn << 7) | (sequenceNum << 2) | (bodyLen >> 8)",
+    "byte[5]": "bodyLen & 0xFF",
+    "bytes[6..6+bodyLen-1]": "message blocks",
+    "bytes[-2..-1]": "CRC16 (big-endian)"
+  },
+  "message_block_types": {
+    "0x01": "VersionResponse",
+    "0x02": "DetailedStatus",
+    "0x03": "SetupPodCommand",
+    "0x07": "AssignAddressCommand",
+    "0x0e": "GetStatusCommand",
+    "0x19": "ConfigureAlertsCommand",
+    "0x1a": "SetInsulinScheduleCommand",
+    "0x1c": "CancelDeliveryCommand",
+    "0x1d": "StatusResponse",
+    "0x1e": "BeepConfigCommand",
+    "0x1f": "DeactivatePodCommand"
+  },
+  "message_vectors": [
+    {
+      "id": "encode_get_status",
+      "description": "Encode GetStatusCommand message",
+      "source": "MessageTests.swift testMessageData()",
+      "operation": "encode",
+      "input": {
+        "address": "0x1f01482a",
+        "addressDecimal": 520177706,
+        "sequenceNum": 4,
+        "expectFollowOn": false,
+        "messageBlocks": [
+          {
+            "type": "GetStatusCommand",
+            "typeRaw": "0x0e",
+            "data": "0e0100"
+          }
+        ]
+      },
+      "expectedHex": "1f01482a10030e0100802c",
+      "parsing": {
+        "byte4": "0x10 = 0b00010000 → followOn=0, seq=(0x10>>2)&0xF=4, lenHi=0",
+        "byte5": "0x03 → bodyLen=3",
+        "body": "0e0100 (GetStatusCommand)",
+        "crc16": "0x802c"
+      }
+    },
+    {
+      "id": "decode_status_response",
+      "description": "Decode StatusResponse message",
+      "source": "MessageTests.swift testMessageDecoding()",
+      "operation": "decode",
+      "hex": "1f00ee84300a1d18003f1800004297ff8128",
+      "expected": {
+        "address": "0x1f00ee84",
+        "addressDecimal": 520154756,
+        "sequenceNum": 12,
+        "expectFollowOn": false,
+        "messageBlocks": [
+          {
+            "type": "StatusResponse",
+            "typeRaw": "0x1d",
+            "data": "1d18003f1800004297ff",
+            "decoded": {
+              "deliveryStatus": "scheduledBasal",
+              "podProgressStatus": "aboveFiftyUnits",
+              "timeActiveMinutes": 4261,
+              "reservoirLevel": 51.15,
+              "insulinDelivered": 6.3,
+              "bolusNotDelivered": 0,
+              "lastProgrammingMessageSeqNum": 3,
+              "alerts": []
+            }
+          }
+        ]
+      },
+      "parsing": {
+        "byte4": "0x30 = 0b00110000 → followOn=0, seq=(0x30>>2)&0xF=12, lenHi=0",
+        "byte5": "0x0a → bodyLen=10",
+        "body": "1d18003f1800004297ff (StatusResponse)",
+        "crc16": "0x8128"
+      }
+    },
+    {
+      "id": "multi_packet_assembly",
+      "description": "Assemble multi-packet message (pod + con)",
+      "source": "MessageTests.swift testAssemblingMultiPacketMessage()",
+      "operation": "decode",
+      "packets": [
+        {
+          "type": "pod",
+          "hex": "ffffffffe4ffffffff041d011b13881008340a5002070002070002030000a62b0004479420",
+          "dataHex": "ffffffff041d011b13881008340a5002070002070002030000a62b00044794"
+        },
+        {
+          "type": "con",
+          "hex": "ffffffff861f00ee878352ff",
+          "dataHex": "1f00ee878352"
+        }
+      ],
+      "assembledHex": "ffffffff041d011b13881008340a5002070002070002030000a62b000447941f00ee878352",
+      "expected": {
+        "address": "0xffffffff",
+        "messageBlocks": [
+          {
+            "type": "VersionResponse",
+            "typeRaw": "0x01",
+            "decoded": {
+              "firmwareVersion": "2.7.0",
+              "iFirmwareVersion": "2.7.0",
+              "lot": 42539,
+              "tid": 280468,
+              "address": "0x1f00ee87",
+              "productId": 2,
+              "podProgressStatus": "pairingCompleted"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "short_eros_version",
+      "description": "Parse short Eros VersionResponse (23 bytes)",
+      "source": "MessageTests.swift testParsingShortErosVersionResponse()",
+      "operation": "decodeBlock",
+      "hex": "011502070002070002020000a64000097c279c1f08ced2",
+      "expected": {
+        "type": "VersionResponse",
+        "dataLen": 23,
+        "firmwareVersion": "2.7.0",
+        "iFirmwareVersion": "2.7.0",
+        "lot": 42560,
+        "tid": 621607,
+        "address": "0x1f08ced2",
+        "productId": 2,
+        "podProgressStatus": "reminderInitialized",
+        "gain": 2,
+        "rssi": "0x1c",
+        "pulseSize": null,
+        "secondsPerBolusPulse": null,
+        "serviceDuration": null
+      }
+    },
+    {
+      "id": "long_eros_version",
+      "description": "Parse long Eros VersionResponse (29 bytes) from message",
+      "source": "MessageTests.swift testParsingLongErosVersionResponse()",
+      "operation": "decode",
+      "hex": "ffffffff041d011b13881008340a5002070002070002030000a62b000447941f00ee878352",
+      "expected": {
+        "address": "0xffffffff",
+        "messageBlocks": [
+          {
+            "type": "VersionResponse",
+            "dataLen": 29,
+            "firmwareVersion": "2.7.0",
+            "iFirmwareVersion": "2.7.0",
+            "lot": 42539,
+            "tid": 280468,
+            "address": "0x1f00ee87",
+            "productId": 2,
+            "podProgressStatus": "pairingCompleted",
+            "pulseSizeUnits": 0.05,
+            "secondsPerBolusPulse": 2,
+            "secondsPerPrimePulse": 1,
+            "primeUnits": 2.6,
+            "cannulaInsertionUnits": 0.5,
+            "serviceDurationHours": 80
+          }
+        ]
+      }
+    },
+    {
+      "id": "short_dash_version",
+      "description": "Parse short Dash VersionResponse",
+      "source": "MessageTests.swift testParsingShortDashVersionResponse()",
+      "operation": "decodeBlock",
+      "hex": "0115031b0008080004020812a011000c175700ffffffff",
+      "expected": {
+        "type": "VersionResponse",
+        "dataLen": 23,
+        "firmwareVersion": "3.27.0",
+        "iFirmwareVersion": "8.8.0",
+        "lot": 135438353,
+        "tid": 792407,
+        "address": "0xffffffff",
+        "productId": 4,
+        "podProgressStatus": "reminderInitialized",
+        "gain": 0,
+        "rssi": 0
+      }
+    },
+    {
+      "id": "long_dash_version",
+      "description": "Parse long Dash VersionResponse from message",
+      "source": "MessageTests.swift testParsingLongDashVersionResponse()",
+      "operation": "decode",
+      "hex": "ffffffff0c1d011b13881008340a50031b0008080004030812a011000c175717244389816c",
+      "expected": {
+        "address": "0xffffffff",
+        "sequenceNum": 3,
+        "messageBlocks": [
+          {
+            "type": "VersionResponse",
+            "dataLen": 29,
+            "firmwareVersion": "3.27.0",
+            "iFirmwareVersion": "8.8.0",
+            "lot": 135438353,
+            "tid": 792407,
+            "address": "0x17244389",
+            "productId": 4,
+            "podProgressStatus": "pairingCompleted"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pairing_expired_version",
+      "description": "Parse VersionResponse with pairing expired status",
+      "source": "MessageTests.swift testParsingConfigWithPairingExpired()",
+      "operation": "decode",
+      "hex": "ffffffff04170115020700020700020e0000a5ad00053030971f08686301fd",
+      "expected": {
+        "address": "0xffffffff",
+        "messageBlocks": [
+          {
+            "type": "VersionResponse",
+            "firmwareVersion": "2.7.0",
+            "iFirmwareVersion": "2.7.0",
+            "lot": 42413,
+            "lotHex": "0x0000a5ad",
+            "tid": 340016,
+            "tidHex": "0x00053030",
+            "address": "0x1f086863",
+            "productId": 2,
+            "podProgressStatus": "activationTimeExceeded",
+            "gain": 2,
+            "rssi": "0x17"
+          }
+        ]
+      }
+    },
+    {
+      "id": "assign_address_cmd",
+      "description": "AssignAddressCommand encode/decode",
+      "source": "MessageTests.swift testAssignAddressCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "07041f01482a",
+      "expected": {
+        "type": "AssignAddressCommand",
+        "typeRaw": "0x07",
+        "address": "0x1f01482a",
+        "addressDecimal": 520177706
+      }
+    },
+    {
+      "id": "setup_pod_cmd",
+      "description": "SetupPodCommand encode/decode",
+      "source": "MessageTests.swift testSetupPodCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "03131f0218c31404060c100d2f0000a4be0004e4a1",
+      "expected": {
+        "type": "SetupPodCommand",
+        "typeRaw": "0x03",
+        "address": "0x1f0218c3",
+        "dateComponents": {
+          "year": 2016,
+          "month": 6,
+          "day": 12,
+          "hour": 13,
+          "minute": 47
+        },
+        "lot": 42174,
+        "lotHex": "0x0000a4be",
+        "tid": 320673,
+        "tidHex": "0x0004e4a1"
+      }
+    },
+    {
+      "id": "prime_cmd",
+      "description": "SetInsulinScheduleCommand for priming",
+      "source": "MessageTests.swift testPrime()",
+      "operation": "decodeBlock",
+      "hex": "1a0ebed2e16b02010a0101a000340034",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "typeRaw": "0x1a",
+        "nonce": "0xbed2e16b",
+        "nonceDecimal": 3201654123,
+        "deliveryType": "bolus",
+        "units": 2.6,
+        "timeBetweenPulsesSeconds": 1,
+        "tableEntries": [
+          {
+            "segments": 1,
+            "pulses": 52,
+            "alternateSegmentPulse": false
+          }
+        ]
+      },
+      "notes": "Prime delivers 2.6U at 1 second per pulse (fast)"
+    },
+    {
+      "id": "insert_cannula_cmd",
+      "description": "SetInsulinScheduleCommand for cannula insertion",
+      "source": "MessageTests.swift testInsertCannula()",
+      "operation": "decodeBlock",
+      "hex": "1a0e7e30bf16020065010050000a000a",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "typeRaw": "0x1a",
+        "nonce": "0x7e30bf16",
+        "nonceDecimal": 2117173014,
+        "deliveryType": "bolus",
+        "units": 0.5,
+        "timeBetweenPulsesSeconds": 1,
+        "tableEntries": [
+          {
+            "segments": 1,
+            "pulses": 10,
+            "alternateSegmentPulse": false
+          }
+        ]
+      },
+      "notes": "Cannula insertion delivers 0.5U at 1 second per pulse"
+    },
+    {
+      "id": "status_response_alerts",
+      "description": "StatusResponse with active alerts",
+      "source": "MessageTests.swift testStatusResponseAlarmsParsing()",
+      "operation": "decodeBlock",
+      "hex": "1d28008200004446ebff",
+      "expected": {
+        "type": "StatusResponse",
+        "typeRaw": "0x1d",
+        "alerts": ["slot3ExpirationReminder", "slot7Expired"]
+      }
+    },
+    {
+      "id": "configure_alerts_cmd",
+      "description": "ConfigureAlertsCommand with multiple alert configs",
+      "source": "MessageTests.swift testConfigureAlertsCommand()",
+      "operation": "encodeDecodeBlock",
+      "encodeHex": "1916feb6268b020f0000020228001283060279a410df0502",
+      "decodeHex": "1916feb6268b79a410df0502280012830602020f00000202",
+      "expected": {
+        "type": "ConfigureAlertsCommand",
+        "typeRaw": "0x19",
+        "nonce": "0xfeb6268b",
+        "configurations": [
+          {
+            "slot": "slot0AutoOff",
+            "active": false,
+            "durationMinutes": 15,
+            "triggerType": "timeUntilAlert",
+            "triggerValueMinutes": 0,
+            "beepRepeat": "every1MinuteFor15Minutes",
+            "beepType": "bipBeepBipBeepBipBeepBipBeep",
+            "autoOffModifier": true,
+            "dataHex": "020f00000202"
+          },
+          {
+            "slot": "slot2ShutdownImminent",
+            "active": true,
+            "durationMinutes": 0,
+            "triggerType": "timeUntilAlert",
+            "triggerValueMinutes": 4739,
+            "beepRepeat": "every15Minutes",
+            "beepType": "bipBeepBipBeepBipBeepBipBeep",
+            "dataHex": "280012830602",
+            "notes": "79 hours - 1 minute = 4739 minutes (pod hard expiration)"
+          },
+          {
+            "slot": "slot7Expired",
+            "active": true,
+            "durationMinutes": 420,
+            "triggerType": "timeUntilAlert",
+            "triggerValueMinutes": 4319,
+            "beepRepeat": "every60Minutes",
+            "beepType": "bipBeepBipBeepBipBeepBipBeep",
+            "dataHex": "79a410df0502",
+            "notes": "72 hours - 1 minute = 4319 minutes (pod soft expiration)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "low_reservoir_alert_config",
+      "description": "Alert configuration for low reservoir",
+      "source": "MessageTests.swift testConfigureAlertsCommand()",
+      "operation": "decodeBlock",
+      "hex": "4c0000640102",
+      "expected": {
+        "type": "AlertConfiguration",
+        "slot": "slot4LowReservoir",
+        "active": true,
+        "autoOffModifier": false,
+        "durationMinutes": 0,
+        "triggerType": "unitsRemaining",
+        "triggerValueUnits": 10,
+        "beepRepeat": "every1MinuteFor3MinutesAndRepeatEvery60Minutes",
+        "beepType": "bipBeepBipBeepBipBeepBipBeep"
+      }
+    }
+  ],
+  "crc16_info": {
+    "description": "CRC16 used for message integrity (different from packet CRC8)",
+    "algorithm": "CRC-16/XMODEM variant",
+    "polynomial": "0x8005",
+    "initial": "0x0000",
+    "notes": "See CRC16.swift in OmniKit"
+  },
+  "python_compat": {
+    "description": "Python parsing logic for Eros messages",
+    "code": "import struct\n\nMESSAGE_BLOCK_TYPES = {\n    0x01: 'VersionResponse',\n    0x02: 'DetailedStatus',\n    0x03: 'SetupPodCommand',\n    0x07: 'AssignAddressCommand',\n    0x0e: 'GetStatusCommand',\n    0x19: 'ConfigureAlertsCommand',\n    0x1a: 'SetInsulinScheduleCommand',\n    0x1c: 'CancelDeliveryCommand',\n    0x1d: 'StatusResponse',\n    0x1e: 'BeepConfigCommand',\n    0x1f: 'DeactivatePodCommand',\n}\n\n# CRC16 table for OmniPod messages\ndef crc16(data: bytes) -> int:\n    \"\"\"Calculate CRC16 for Eros message (XMODEM variant).\"\"\"\n    crc = 0\n    for byte in data:\n        crc ^= byte << 8\n        for _ in range(8):\n            if crc & 0x8000:\n                crc = (crc << 1) ^ 0x8005\n            else:\n                crc <<= 1\n            crc &= 0xFFFF\n    return crc\n\ndef parse_eros_message(data: bytes) -> dict:\n    \"\"\"Parse an Eros message from raw bytes.\"\"\"\n    if len(data) < 10:\n        raise ValueError('Insufficient data for message (need >= 10 bytes)')\n    \n    address = struct.unpack('>I', data[0:4])[0]\n    b9 = data[4]\n    body_len = data[5]\n    \n    expect_follow_on = bool(b9 & 0x80)\n    sequence_num = (b9 >> 2) & 0x0F\n    \n    if body_len > len(data) - 8:\n        raise ValueError(f'Body length {body_len} exceeds available data')\n    \n    # Verify CRC16\n    expected_crc = crc16(data[:-2])\n    actual_crc = struct.unpack('>H', data[-2:])[0]\n    if expected_crc != actual_crc:\n        raise ValueError(f'CRC16 mismatch: expected {expected_crc:#06x}, got {actual_crc:#06x}')\n    \n    # Parse message blocks\n    body = data[6:-2]\n    blocks = []\n    idx = 0\n    while idx < len(body):\n        block_type = body[idx]\n        block_name = MESSAGE_BLOCK_TYPES.get(block_type, f'Unknown(0x{block_type:02x})')\n        \n        # Block length is at offset 1 (varies by block type)\n        if idx + 1 < len(body):\n            block_len = body[idx + 1] + 2  # +2 for type and length bytes\n        else:\n            block_len = len(body) - idx\n        \n        block_data = body[idx:idx + block_len]\n        blocks.append({\n            'type': block_name,\n            'typeRaw': block_type,\n            'data': block_data.hex(),\n            'dataLen': len(block_data)\n        })\n        idx += block_len\n    \n    return {\n        'address': address,\n        'addressHex': f'0x{address:08x}',\n        'sequenceNum': sequence_num,\n        'expectFollowOn': expect_follow_on,\n        'bodyLen': body_len,\n        'messageBlocks': blocks,\n        'crc16': actual_crc,\n        'crc16Hex': f'0x{actual_crc:04x}'\n    }\n\ndef encode_eros_message(address: int, sequence_num: int, blocks_data: bytes,\n                        expect_follow_on: bool = False) -> bytes:\n    \"\"\"Encode an Eros message to raw bytes.\"\"\"\n    # Build message without CRC\n    msg = struct.pack('>I', address)\n    \n    body_len = len(blocks_data)\n    b9 = ((1 if expect_follow_on else 0) << 7) | ((sequence_num & 0x0F) << 2) | ((body_len >> 8) & 0x03)\n    msg += bytes([b9, body_len & 0xFF])\n    msg += blocks_data\n    \n    # Append CRC16\n    msg += struct.pack('>H', crc16(msg))\n    return msg"
+  }
+}

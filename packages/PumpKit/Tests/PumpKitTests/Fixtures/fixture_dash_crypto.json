@@ -1,0 +1,62 @@
+{
+  "test_name": "dash_encryption",
+  "description": "DASH-SYNTH-002: Test vectors for Omnipod DASH AES-CCM encryption/decryption",
+  "reference": "OmniBLE/Bluetooth/EnDecrypt/EnDecrypt.swift, OmniBLETests/Driver/Comm/endecrypt/EnDecryptTests.swift",
+  "protocol": {
+    "description": "Omnipod DASH uses AES-CCM for message encryption with 8-byte MAC tag",
+    "algorithm": "AES-CCM",
+    "constants": {
+      "MAC_SIZE": 8,
+      "key_size": 16,
+      "nonce_prefix_size": 8
+    },
+    "nonce_format": "prefix (8 bytes) + sequence number + pod_receiving flag"
+  },
+  "vectors": [
+    {
+      "name": "OmniBLE Test Vector - Decrypt",
+      "source": "OmniBLETests/Driver/Comm/endecrypt/EnDecryptTests.swift testDecrypt()",
+      "operation": "decrypt",
+      "inputs": {
+        "nonce_prefix": "6cff5d18b7616cae",
+        "ck": "55799fd26664cbf6e476525e2dee52c6",
+        "nonce_seq": 23,
+        "encrypted_message": "545711a10c16030008202ea908202ea8347cb97b385d45a3c40e404c55715ef3c38650173670623c7d0b469e81cdfd9a",
+        "header_16_bytes": "first 16 bytes of encrypted message packet"
+      },
+      "expected_outputs": {
+        "decrypted_payload": "302e303d001208202ea91c0a1d050016b00000000bff01fe"
+      },
+      "notes": "Decrypt incoming pod message, nonceSeq=23"
+    },
+    {
+      "name": "OmniBLE Test Vector - Encrypt",
+      "source": "OmniBLETests/Driver/Comm/endecrypt/EnDecryptTests.swift testEncrypt()",
+      "operation": "encrypt",
+      "inputs": {
+        "nonce_prefix": "dda23c090a0a0a0a",
+        "ck": "ba1283744b6de9fab6d9b77d95a71d6e",
+        "nonce_seq": 1,
+        "plaintext_command": "53302e303d000effffffff00060704ffffffff82b22c47302e30"
+      },
+      "expected_outputs": {
+        "encrypted_message": "54571101070003400242000002420001e09158bcb0285a81bf30635f3a17ee73f0afbb3286bc524a8a66fb1bc5b001e56543"
+      },
+      "notes": "Encrypt outgoing PDM command, nonceSeq=1"
+    }
+  ],
+  "python_compat": {
+    "description": "Python AES-CCM encryption/decryption using cryptography library",
+    "code": "from cryptography.hazmat.primitives.ciphers.aead import AESCCM\n\ndef build_nonce(prefix: bytes, seq: int, pod_receiving: bool) -> bytes:\n    # Nonce format from OmniBLE Nonce.swift\n    # prefix (8 bytes) + sequence bytes + flags\n    # Simplified - actual implementation may differ\n    seq_bytes = seq.to_bytes(4, 'big')\n    flag = bytes([0x01 if pod_receiving else 0x00])\n    return prefix + seq_bytes  # Actual format TBD from Nonce.swift\n\ndef decrypt_dash(ck: bytes, nonce: bytes, ciphertext: bytes, header: bytes) -> bytes:\n    aesccm = AESCCM(ck, tag_length=8)\n    return aesccm.decrypt(nonce, ciphertext, header)\n\ndef encrypt_dash(ck: bytes, nonce: bytes, plaintext: bytes, header: bytes) -> bytes:\n    aesccm = AESCCM(ck, tag_length=8)\n    return aesccm.encrypt(nonce, plaintext, header)",
+    "dependencies": ["cryptography>=3.0"],
+    "notes": "Nonce construction requires understanding of Nonce.swift toData() method"
+  },
+  "ccm_parameters": {
+    "tag_length": 8,
+    "additional_authenticated_data": "First 16 bytes of message header",
+    "nonce_construction": {
+      "description": "See OmniBLE/Bluetooth/EnDecrypt/Nonce.swift for details",
+      "format": "prefix + sequence_number + pod_receiving_flag"
+    }
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "_source": "CGMBLEKit GlucoseRxMessageTests.swift (Loop/Trio)",
+  "_task": "G6-SYNTH-007",
+  "_description": "Test vectors for Dexcom G5 glucose messages (opcode 0x31)",
+  "_format": {
+    "name": "GlucoseRxMessage (G5)",
+    "opcode": "0x31",
+    "length": 16,
+    "structure": "31 SS NNNNNNNN TTTTTTTT GGGG ST TR CC CC",
+    "fields": {
+      "byte[0]": "opcode (0x31 = glucoseRx)",
+      "byte[1]": "status",
+      "bytes[2-5]": "sequence (UInt32 LE)",
+      "bytes[6-9]": "timestamp (UInt32 LE)",
+      "bytes[10-11]": "glucose: bits 0-11 = value, bits 12-15 = displayOnly flag",
+      "byte[12]": "state",
+      "byte[13]": "trend (Int8, signed)",
+      "bytes[14-15]": "CRC16"
+    },
+    "displayOnly_extraction": "glucoseIsDisplayOnly = (glucoseBytes & 0xF000) > 0",
+    "glucose_extraction": "glucose = glucoseBytes & 0x0FFF"
+  },
+  "test_vectors": [
+    {
+      "id": "g5_normal_204",
+      "description": "Normal reading 204 mg/dL, slight down trend",
+      "source": "CGMBLEKitTests/GlucoseRxMessageTests.swift testMessageData()",
+      "source_line": 16,
+      "hex": "3100680a00008a715700cc0006ffc42a",
+      "expected": {
+        "opcode": "0x31",
+        "status": 0,
+        "sequence": 2664,
+        "timestamp": 5730698,
+        "glucoseIsDisplayOnly": false,
+        "glucose": 204,
+        "state": 6,
+        "trend": -1
+      },
+      "parsing": {
+        "bytes[2:6]": "68 0a 00 00 → sequence = 0x00000a68 = 2664",
+        "bytes[6:10]": "8a 71 57 00 → timestamp = 0x0057718a = 5730698",
+        "bytes[10:12]": "cc 00 → glucoseBytes = 0x00cc = 204, displayOnly = false",
+        "byte[12]": "06 → state = 6 (OK)",
+        "byte[13]": "ff → trend = -1 (signed)"
+      }
+    },
+    {
+      "id": "g5_negative_trend",
+      "description": "122 mg/dL with strong negative trend (-28)",
+      "source": "CGMBLEKitTests/GlucoseRxMessageTests.swift testNegativeTrend()",
+      "source_line": 29,
+      "hex": "31006f0a0000be7957007a0006e4818d",
+      "expected": {
+        "opcode": "0x31",
+        "status": 0,
+        "sequence": 2671,
+        "timestamp": 5732798,
+        "glucoseIsDisplayOnly": false,
+        "glucose": 122,
+        "state": 6,
+        "trend": -28
+      },
+      "parsing": {
+        "bytes[2:6]": "6f 0a 00 00 → sequence = 0x00000a6f = 2671",
+        "bytes[6:10]": "be 79 57 00 → timestamp = 0x005779be = 5732798",
+        "bytes[10:12]": "7a 00 → glucoseBytes = 0x007a = 122, displayOnly = false",
+        "byte[12]": "06 → state = 6 (OK)",
+        "byte[13]": "e4 → trend = -28 (signed: 0xe4 = -28)"
+      }
+    },
+    {
+      "id": "g5_display_only",
+      "description": "88 mg/dL with displayOnly flag set",
+      "source": "CGMBLEKitTests/GlucoseRxMessageTests.swift testDisplayOnly()",
+      "source_line": 41,
+      "hex": "3100700a0000f17a5700584006e3cee9",
+      "expected": {
+        "opcode": "0x31",
+        "status": 0,
+        "sequence": 2672,
+        "timestamp": 5733105,
+        "glucoseIsDisplayOnly": true,
+        "glucose": 88,
+        "state": 6,
+        "trend": -29
+      },
+      "parsing": {
+        "bytes[10:12]": "58 40 → glucoseBytes = 0x4058, displayOnly = (0x4058 & 0xF000) = 0x4000 > 0 = true, glucose = 0x4058 & 0x0FFF = 88"
+      }
+    },
+    {
+      "id": "g5_old_transmitter",
+      "description": "Old transmitter (90 days), 139 mg/dL, positive trend",
+      "source": "CGMBLEKitTests/GlucoseRxMessageTests.swift testOldTransmitter()",
+      "source_line": 54,
+      "hex": "3100aa00000095a078008b00060a8b34",
+      "expected": {
+        "opcode": "0x31",
+        "status": 0,
+        "sequence": 170,
+        "timestamp": 7905429,
+        "timestampNote": "~90 days, status still OK",
+        "glucoseIsDisplayOnly": false,
+        "glucose": 139,
+        "state": 6,
+        "trend": 10
+      }
+    },
+    {
+      "id": "g5_zero_sequence",
+      "description": "Zero sequence number, 130 mg/dL",
+      "source": "CGMBLEKitTests/GlucoseRxMessageTests.swift testZeroSequence()",
+      "source_line": 67,
+      "hex": "3100000000008eb14d00820006f6a038",
+      "expected": {
+        "opcode": "0x31",
+        "status": 0,
+        "sequence": 0,
+        "timestamp": 5091726,
+        "glucoseIsDisplayOnly": false,
+        "glucose": 130,
+        "state": 6,
+        "trend": -10
+      }
+    }
+  ],
+  "state_values": {
+    "description": "Known sensor state values",
+    "values": {
+      "0": "None",
+      "1": "Stopped",
+      "2": "Warmup",
+      "3": "ExcessNoise",
+      "4": "NeedsFirstCalibration",
+      "5": "NeedsSecondCalibration",
+      "6": "OK",
+      "7": "NeedsCalibration",
+      "8": "CalibrationError1",
+      "9": "CalibrationError2",
+      "10": "CalibrationLinearityFitFailure",
+      "11": "SensorFailedDueToCountsAberration",
+      "12": "SensorFailedDueToResidualAberration",
+      "128": "Reserved for extension"
+    }
+  },
+  "python_compat": {
+    "description": "Python parsing logic for G5 glucose messages",
+    "code": "import struct\n\ndef parse_g5_glucose(data: bytes) -> dict:\n    \"\"\"Parse G5 GlucoseRxMessage from raw bytes.\"\"\"\n    if len(data) < 14 or data[0] != 0x31:\n        raise ValueError('Invalid G5 glucose message')\n    \n    status = data[1]\n    sequence = struct.unpack('<I', data[2:6])[0]\n    timestamp = struct.unpack('<I', data[6:10])[0]\n    glucose_bytes = struct.unpack('<H', data[10:12])[0]\n    \n    display_only = (glucose_bytes & 0xF000) > 0\n    glucose = glucose_bytes & 0x0FFF\n    state = data[12]\n    trend = struct.unpack('<b', data[13:14])[0]  # signed int8\n    \n    return {\n        'status': status,\n        'sequence': sequence,\n        'timestamp': timestamp,\n        'glucoseIsDisplayOnly': display_only,\n        'glucose': glucose,\n        'state': state,\n        'trend': trend\n    }"
+  }
+}

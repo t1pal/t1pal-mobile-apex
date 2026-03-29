@@ -1,0 +1,35 @@
+Feb 10 20:28:47 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:28:57 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:28:58 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:28:59 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Notice>: centralManager(_:didConnect:): <CBPeripheral: 0x108596760, identifier = AAA9BA45-0DD0-FF9C-0111-D2C70958F100, name = DexcomWY, mtu = 23, state = connected>
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Error>: Configured peripheral has no services. Reconfiguring\M-b\M^@\M-&
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Notice>: transmitterDidConnect(_:)
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Notice>: Peripheral configuration completed
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Notice>: Delegate configuration completed
+Feb 10 20:29:19 Loop(CGMBLEKit)[407] <Notice>: transmitter(_:didRead:): New glucose
+Feb 10 20:29:19 Loop(LoopKit)[407] <Notice>: receive (8QTPWY) New reading: 2026-02-11 04:29:06 +0000
+Feb 10 20:29:20 Loop(CGMBLEKit)[407] <Notice>: centralManager(_:didDisconnectPeripheral:error:): <CBPeripheral: 0x108596760, identifier = AAA9BA45-0DD0-FF9C-0111-D2C70958F100, name = DexcomWY, mtu = 23, state = disconnected>
+Feb 10 20:29:20 Loop(LoopKit)[407] <Notice>: Stored 1 eligible glucose samples to HealthKit
+Feb 10 20:29:20 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:29:20 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:29:20 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:29:22 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:29:22 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:30:54 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:31:06 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:31:10 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Notice>: centralManager(_:didConnect:): <CBPeripheral: 0x108596760, identifier = AAA9BA45-0DD0-FF9C-0111-D2C70958F100, name = DexcomWY, mtu = 23, state = connected>
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Notice>: transmitterDidConnect(_:)
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Error>: Configured peripheral has no services. Reconfiguring\M-b\M^@\M-&
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Notice>: Peripheral configuration completed
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Notice>: Delegate configuration completed
+Feb 10 20:34:19 Loop(CGMBLEKit)[407] <Notice>: transmitter(_:didRead:): New glucose
+Feb 10 20:34:19 Loop(LoopKit)[407] <Notice>: receive (8QTPWY) New reading: 2026-02-11 04:34:06 +0000
+Feb 10 20:34:19 Loop(LoopKit)[407] <Notice>: Stored 1 eligible glucose samples to HealthKit
+Feb 10 20:34:19 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:34:19 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:34:19 Loop[407] <Notice>: Received notification of glucose samples changing
+Feb 10 20:34:20 Loop(CGMBLEKit)[407] <Notice>: centralManager(_:didDisconnectPeripheral:error:): <CBPeripheral: 0x108596760, identifier = AAA9BA45-0DD0-FF9C-0111-D2C70958F100, name = DexcomWY, mtu = 23, state = disconnected>
+Feb 10 20:34:22 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(
+Feb 10 20:34:22 bluetoothd[98] <Notice>: Saving Central restoration data: <private> - bundleId com.medicaldatanetworks.loop-denim.Loop, restorationId: com.loudnate.CGMBLEKit, servicesToScan: {(

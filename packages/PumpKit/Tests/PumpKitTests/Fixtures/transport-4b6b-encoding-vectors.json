@@ -1,0 +1,192 @@
+{
+  "description": "4b6b encoding/decoding test vectors",
+  "trace": "TRANSPORT-012",
+  "created": "2026-02-17",
+  "source": "TRANSPORT-LAYER-REFERENCE.md Section 4, MinimedKit FourByteSixByteEncoding.swift",
+  
+  "encoding_table": {
+    "description": "4-bit to 6-bit encoding lookup table",
+    "nibble_to_6bit": {
+      "0x0": "0x15",
+      "0x1": "0x31",
+      "0x2": "0x32",
+      "0x3": "0x23",
+      "0x4": "0x34",
+      "0x5": "0x25",
+      "0x6": "0x26",
+      "0x7": "0x16",
+      "0x8": "0x1A",
+      "0x9": "0x19",
+      "0xA": "0x2A",
+      "0xB": "0x0B",
+      "0xC": "0x2C",
+      "0xD": "0x0D",
+      "0xE": "0x0E",
+      "0xF": "0x1C"
+    },
+    "6bit_to_nibble": {
+      "0x15": "0x0",
+      "0x31": "0x1",
+      "0x32": "0x2",
+      "0x23": "0x3",
+      "0x34": "0x4",
+      "0x25": "0x5",
+      "0x26": "0x6",
+      "0x16": "0x7",
+      "0x1A": "0x8",
+      "0x19": "0x9",
+      "0x2A": "0xA",
+      "0x0B": "0xB",
+      "0x2C": "0xC",
+      "0x0D": "0xD",
+      "0x0E": "0xE",
+      "0x1C": "0xF"
+    }
+  },
+  
+  "encoding_vectors": [
+    {
+      "id": "4B6B-ENC-001",
+      "description": "Single byte encoding",
+      "input_hex": "A7",
+      "input_bytes": [167],
+      "input_nibbles": ["A", "7"],
+      "encoded_6bit": ["0x2A", "0x16"],
+      "packed_output_hex": "A960",
+      "output_bytes": [169, 96],
+      "notes": "2 nibbles -> 12 bits -> 2 bytes (4 bits padding)"
+    },
+    {
+      "id": "4B6B-ENC-002",
+      "description": "Two byte encoding",
+      "input_hex": "A720",
+      "input_bytes": [167, 32],
+      "input_nibbles": ["A", "7", "2", "0"],
+      "encoded_6bit": ["0x2A", "0x16", "0x32", "0x15"],
+      "packed_output_hex": "A96C95",
+      "output_bytes": [169, 108, 149],
+      "notes": "4 nibbles -> 24 bits -> 3 bytes (no padding)"
+    },
+    {
+      "id": "4B6B-ENC-003",
+      "description": "Three byte encoding",
+      "input_hex": "A72088",
+      "input_bytes": [167, 32, 136],
+      "packed_output_hex": "A96C9569A0",
+      "output_bytes": [169, 108, 149, 105, 160],
+      "notes": "3 bytes (6 nibbles) -> 36 bits -> 5 bytes (4 bits padding)"
+    },
+    {
+      "id": "4B6B-ENC-004",
+      "description": "Medtronic pump address (6 bytes)",
+      "input_hex": "A72088507301",
+      "input_bytes": [167, 32, 136, 80, 115, 1],
+      "packed_output_hex": "A96C9569A9555A3571",
+      "output_bytes": [169, 108, 149, 105, 169, 85, 90, 53, 113],
+      "notes": "6 bytes -> 9 bytes (48 bits -> 72 bits)"
+    },
+    {
+      "id": "4B6B-ENC-005",
+      "description": "All zeros",
+      "input_hex": "0000",
+      "input_bytes": [0, 0],
+      "packed_output_hex": "555555",
+      "output_bytes": [85, 85, 85],
+      "notes": "0x0 encodes to 0x15 (21 decimal), packed as alternating"
+    },
+    {
+      "id": "4B6B-ENC-006",
+      "description": "All ones (0xFF)",
+      "input_hex": "FFFF",
+      "input_bytes": [255, 255],
+      "packed_output_hex": "71C71C",
+      "output_bytes": [113, 199, 28],
+      "notes": "0xF encodes to 0x1C (28 decimal)"
+    }
+  ],
+  
+  "decoding_vectors": [
+    {
+      "id": "4B6B-DEC-001",
+      "description": "Single byte decoding",
+      "input_hex": "A960",
+      "input_bytes": [169, 96],
+      "decoded_hex": "A7",
+      "decoded_bytes": [167]
+    },
+    {
+      "id": "4B6B-DEC-002",
+      "description": "Two byte decoding",
+      "input_hex": "A96C95",
+      "input_bytes": [169, 108, 149],
+      "decoded_hex": "A720",
+      "decoded_bytes": [167, 32]
+    },
+    {
+      "id": "4B6B-DEC-003",
+      "description": "Pump address decoding",
+      "input_hex": "A96C9569A9555A3571",
+      "input_bytes": [169, 108, 149, 105, 169, 85, 90, 53, 113],
+      "decoded_hex": "A72088507301",
+      "decoded_bytes": [167, 32, 136, 80, 115, 1]
+    }
+  ],
+  
+  "edge_cases": [
+    {
+      "id": "4B6B-EDGE-001",
+      "description": "Empty input",
+      "input_hex": "",
+      "input_bytes": [],
+      "encoded_hex": "",
+      "encoded_bytes": []
+    },
+    {
+      "id": "4B6B-EDGE-002",
+      "description": "Invalid 6-bit code in decode",
+      "input_hex": "FF00",
+      "expected_error": "invalid_6bit_code",
+      "notes": "0xFF and 0x00 are not valid 6-bit encodings"
+    },
+    {
+      "id": "4B6B-EDGE-003",
+      "description": "Truncated input (odd nibble count)",
+      "input_hex": "A8",
+      "expected_behavior": "partial_decode_or_error",
+      "notes": "Implementation-dependent handling"
+    }
+  ],
+  
+  "bit_packing": {
+    "description": "How 6-bit codes are packed into bytes",
+    "algorithm": [
+      "1. Convert each input nibble to 6-bit code",
+      "2. Concatenate 6-bit codes into bit stream",
+      "3. Pack bit stream into bytes (MSB first)",
+      "4. Pad final byte with zeros if needed"
+    ],
+    "example": {
+      "input": "A7",
+      "step1_nibbles": ["A", "7"],
+      "step2_6bit_codes": ["101010", "010110"],
+      "step3_bitstream": "101010010110",
+      "step4_padded": "101010010110 0000",
+      "step5_bytes": ["10101001", "01100000"],
+      "output_hex": "A960",
+      "note": "Actual implementation may vary in bit ordering"
+    }
+  },
+  
+  "expansion_ratio": {
+    "description": "4b6b expands data by 50%",
+    "formula": "output_bytes = ceil(input_bytes * 1.5)",
+    "examples": [
+      {"input_bytes": 1, "output_bytes": 2},
+      {"input_bytes": 2, "output_bytes": 3},
+      {"input_bytes": 3, "output_bytes": 5},
+      {"input_bytes": 4, "output_bytes": 6},
+      {"input_bytes": 6, "output_bytes": 9},
+      {"input_bytes": 10, "output_bytes": 15}
+    ]
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "description": "DataContext integration test scenarios for NS-CONTEXT-001..003",
+  "version": "1.0.0",
+  "created": "2026-02-14",
+  "trace": ["NS-CONTEXT-001", "NS-CONTEXT-002", "NS-CONTEXT-003"],
+  
+  "ns_context_001_fault_injection": {
+    "description": "Fault injection scenarios - verify context degradation on NS failure",
+    "scenarios": [
+      {
+        "name": "ns_unreachable_degrades_to_offline",
+        "initial_context": {
+          "sourceType": "liveNS",
+          "nightscoutURL": "https://test.nightscout.io"
+        },
+        "fault": {
+          "type": "network",
+          "subtype": "unreachable"
+        },
+        "expected": {
+          "hasError": true,
+          "queueActivated": true,
+          "contextDegraded": false
+        }
+      },
+      {
+        "name": "ns_auth_failure_sets_error",
+        "initial_context": {
+          "sourceType": "liveNS",
+          "nightscoutURL": "https://test.nightscout.io"
+        },
+        "fault": {
+          "type": "network",
+          "subtype": "authFailure",
+          "statusCode": 401
+        },
+        "expected": {
+          "hasError": true,
+          "errorType": "authenticationFailed",
+          "queueActivated": false
+        }
+      },
+      {
+        "name": "ns_timeout_queues_operations",
+        "initial_context": {
+          "sourceType": "liveNS",
+          "nightscoutURL": "https://test.nightscout.io"
+        },
+        "fault": {
+          "type": "network",
+          "subtype": "timeout"
+        },
+        "expected": {
+          "hasError": true,
+          "operationsQueued": true,
+          "retryScheduled": true
+        }
+      }
+    ]
+  },
+  
+  "ns_context_002_reconciliation": {
+    "description": "Multi-source reconciliation - NS vs local data differ",
+    "scenarios": [
+      {
+        "name": "ns_newer_overwrites_local",
+        "local_entries": [
+          {"sgv": 120, "date": 1707864000000, "identifier": "entry-001"}
+        ],
+        "ns_entries": [
+          {"sgv": 125, "date": 1707864000000, "identifier": "entry-001", "srvModified": 1707864100000}
+        ],
+        "expected": {
+          "mergeStrategy": "serverWins",
+          "finalSgv": 125,
+          "conflictResolution": "timestamp"
+        }
+      },
+      {
+        "name": "local_newer_uploads_to_ns",
+        "local_entries": [
+          {"sgv": 130, "date": 1707864200000, "identifier": "entry-002", "localModified": 1707864300000}
+        ],
+        "ns_entries": [
+          {"sgv": 128, "date": 1707864200000, "identifier": "entry-002", "srvModified": 1707864100000}
+        ],
+        "expected": {
+          "mergeStrategy": "localWins",
+          "uploadPending": true,
+          "finalSgv": 130
+        }
+      },
+      {
+        "name": "new_local_entries_uploaded",
+        "local_entries": [
+          {"sgv": 115, "date": 1707865000000, "identifier": "entry-new-001"}
+        ],
+        "ns_entries": [],
+        "expected": {
+          "uploadPending": true,
+          "newEntriesCount": 1
+        }
+      },
+      {
+        "name": "new_ns_entries_downloaded",
+        "local_entries": [],
+        "ns_entries": [
+          {"sgv": 118, "date": 1707865100000, "identifier": "entry-ns-001"}
+        ],
+        "expected": {
+          "downloadedCount": 1,
+          "localCacheUpdated": true
+        }
+      }
+    ]
+  },
+  
+  "ns_context_003_offline_online_transition": {
+    "description": "Offline to online transition - queue drains correctly",
+    "scenarios": [
+      {
+        "name": "offline_queue_drains_on_reconnect",
+        "initial_state": {
+          "networkState": "offline",
+          "queuedEntries": 5,
+          "queuedTreatments": 2
+        },
+        "transition": {
+          "networkState": "online"
+        },
+        "expected": {
+          "queueProcessed": true,
+          "entriesUploaded": 5,
+          "treatmentsUploaded": 2,
+          "queueEmpty": true
+        }
+      },
+      {
+        "name": "partial_drain_retains_failed",
+        "initial_state": {
+          "networkState": "offline",
+          "queuedEntries": 5
+        },
+        "transition": {
+          "networkState": "online",
+          "simulateFaults": {
+            "failAfter": 3
+          }
+        },
+        "expected": {
+          "entriesUploaded": 3,
+          "entriesRetained": 2,
+          "queueEmpty": false
+        }
+      },
+      {
+        "name": "reconnect_triggers_sync",
+        "initial_state": {
+          "networkState": "offline",
+          "lastSyncTime": 1707864000000
+        },
+        "transition": {
+          "networkState": "online"
+        },
+        "expected": {
+          "syncTriggered": true,
+          "fetchesSince": 1707864000000
+        }
+      },
+      {
+        "name": "rapid_reconnect_debounced",
+        "transitions": [
+          {"networkState": "online", "delay": 0},
+          {"networkState": "offline", "delay": 100},
+          {"networkState": "online", "delay": 200}
+        ],
+        "expected": {
+          "syncCount": 1,
+          "debounceApplied": true
+        }
+      }
+    ]
+  }
+}

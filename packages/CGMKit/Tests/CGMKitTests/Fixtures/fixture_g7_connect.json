@@ -1,0 +1,524 @@
+{
+  "session_id": "SESSION-G7-001a",
+  "session_name": "Dexcom G7 BLE Connection Sequence",
+  "description": "Complete G7 connection flow: scan → connect → discover → J-PAKE auth → streaming. G7 is a one-piece sensor using J-PAKE authentication with 4-digit sensor code.",
+  "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+  "sensor_serial": "ABC1234567",
+  "sensor_code": "1234",
+  "frequency_mhz": 2400.0,
+  "protocol": "BLE",
+  "timestamp": "2026-02-13T10:31:00Z",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+
+  "ble_characteristics": {
+    "advertisement_service_uuid": "FEBC",
+    "service_uuid": "F8083532-849E-531C-C594-30F1F86A4EA5",
+    "communication_uuid": "F8083533-849E-531C-C594-30F1F86A4EA5",
+    "control_uuid": "F8083534-849E-531C-C594-30F1F86A4EA5",
+    "auth_uuid": "F8083535-849E-531C-C594-30F1F86A4EA5",
+    "backfill_uuid": "F8083536-849E-531C-C594-30F1F86A4EA5",
+    "source": "externals/G7SensorKit/G7SensorKit/BluetoothServices.swift"
+  },
+
+  "sensor_info": {
+    "warmup_minutes": 27.0,
+    "lifetime_hours": 240.0,
+    "grace_period_hours": 12.0,
+    "session_days": 10.5,
+    "uses_jpake_auth": true,
+    "sensor_code_length": 4,
+    "sensor_serial_length": 10,
+    "source": "externals/G7SensorKit/G7SensorKit/G7CGMManager/G7Sensor.swift:67-69"
+  },
+
+  "timing": {
+    "discovery_timeout_s": 2.0,
+    "write_timeout_s": 1.0,
+    "command_timeout_s": 2.0,
+    "scan_delay_after_disconnect_s": 2.0,
+    "source": "externals/G7SensorKit/G7SensorKit/G7CGMManager/G7PeripheralManager.swift"
+  },
+
+  "state_machine": {
+    "initial": "idle",
+    "final": "streaming",
+    "states": [
+      { "name": "idle", "description": "Not connected" },
+      { "name": "scanning", "description": "Scanning for G7 sensor" },
+      { "name": "connecting", "description": "Establishing BLE connection" },
+      { "name": "pairing", "description": "Starting J-PAKE Round 1" },
+      { "name": "authenticating", "description": "Processing J-PAKE Rounds 1-2 and confirmation" },
+      { "name": "streaming", "description": "Authenticated, receiving glucose" },
+      { "name": "disconnecting", "description": "Graceful disconnect" },
+      { "name": "error", "description": "Connection or auth failed" },
+      { "name": "passive", "description": "Passive mode (observe only)" }
+    ],
+    "transitions": [
+      { "from": "idle", "to": "scanning", "trigger": "startScanning()" },
+      { "from": "scanning", "to": "connecting", "trigger": "sensor_discovered" },
+      { "from": "connecting", "to": "pairing", "trigger": "services_discovered" },
+      { "from": "pairing", "to": "authenticating", "trigger": "round1_sent" },
+      { "from": "authenticating", "to": "streaming", "trigger": "jpake_confirmed" },
+      { "from": "streaming", "to": "disconnecting", "trigger": "disconnect()" },
+      { "from": "disconnecting", "to": "idle", "trigger": "disconnected" },
+      { "from": "any", "to": "error", "trigger": "error" }
+    ]
+  },
+
+  "opcodes": {
+    "0x01": { "name": "AuthInit", "direction": "client→server", "description": "J-PAKE initialization (not used in G7)" },
+    "0x02": { "name": "AuthRound1", "direction": "bidirectional", "description": "J-PAKE Round 1 exchange" },
+    "0x03": { "name": "AuthRound2", "direction": "bidirectional", "description": "J-PAKE Round 2 exchange" },
+    "0x04": { "name": "AuthConfirm", "direction": "bidirectional", "description": "J-PAKE key confirmation" },
+    "0x05": { "name": "AuthStatus", "direction": "server→client", "description": "Authentication status" },
+    "0x06": { "name": "KeepAlive", "direction": "client→server", "description": "Keep connection alive" },
+    "0x07": { "name": "BondRequest", "direction": "client→server", "description": "Request bonding" },
+    "0x08": { "name": "PairRequest", "direction": "client→server", "description": "G7 pairing with sensor code" },
+    "0x09": { "name": "DisconnectTx", "direction": "client→server", "description": "Graceful disconnect" },
+    "0x20": { "name": "SensorInfoTx", "direction": "client→server", "description": "Request sensor info" },
+    "0x21": { "name": "SensorInfoRx", "direction": "server→client", "description": "Sensor info response" },
+    "0x24": { "name": "SensorTimeTx", "direction": "client→server", "description": "Request sensor time" },
+    "0x25": { "name": "SensorTimeRx", "direction": "server→client", "description": "Sensor time response" },
+    "0x4E": { "name": "GlucoseTx", "direction": "client→server", "description": "Request glucose reading" },
+    "0x4F": { "name": "GlucoseRx", "direction": "server→client", "description": "Glucose reading response (20 bytes)" },
+    "0x50": { "name": "EGVTx", "direction": "client→server", "description": "Request EGV" },
+    "0x51": { "name": "EGVRx", "direction": "server→client", "description": "EGV response (14 bytes)" },
+    "0x52": { "name": "BackfillTx", "direction": "client→server", "description": "Request historical data" },
+    "0x53": { "name": "BackfillRx", "direction": "server→client", "description": "Historical data response" }
+  },
+
+  "jpake_protocol": {
+    "description": "J-PAKE (Password Authenticated Key Exchange by Juggling) per RFC 8236",
+    "curve": "P-256",
+    "password": "4-digit sensor code",
+    "rounds": [
+      {
+        "round": 1,
+        "description": "Exchange g^x1, g^x2 with zero-knowledge proofs",
+        "client_sends": ["g^x1 (32 bytes)", "g^x2 (32 bytes)", "ZKP1 (80 bytes)", "ZKP2 (80 bytes)"],
+        "server_responds": ["g^x3 (32 bytes)", "g^x4 (32 bytes)", "ZKP3 (80 bytes)", "ZKP4 (80 bytes)"]
+      },
+      {
+        "round": 2,
+        "description": "Compute A = g^((x1+x3+x4)*x2*s) where s is password",
+        "client_sends": ["A (32 bytes)", "ZKP_A (80 bytes)"],
+        "server_responds": ["B (32 bytes)", "ZKP_B (80 bytes)"]
+      },
+      {
+        "round": 3,
+        "description": "Key confirmation - exchange confirmation hashes",
+        "client_sends": ["confirmHash (16 bytes)"],
+        "server_responds": ["confirmHash (16 bytes)"]
+      }
+    ],
+    "zkp_structure": {
+      "commitment": "32 bytes",
+      "challenge": "16 bytes",
+      "response": "32 bytes",
+      "total": "80 bytes"
+    }
+  },
+
+  "steps": [
+    {
+      "step": 1,
+      "state": "idle → scanning",
+      "operation": "START_SCAN",
+      "description": "Start scanning for G7 advertisement service",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 195,
+      "action": {
+        "method": "central.scan(for: [.dexcomG7Advertisement])",
+        "advertisement_uuid": "FE59",
+        "match_criteria": "advertisement.localName or peripheral.name contains sensor_serial"
+      },
+      "notes": "G7 uses different advertisement UUID than G6"
+    },
+    {
+      "step": 2,
+      "state": "scanning → connecting",
+      "operation": "CONNECT",
+      "description": "Found matching sensor, connect to peripheral",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 342,
+      "action": {
+        "method": "central.connect(to: peripheral)",
+        "peripheral_name": "DexcomXX (ABC1234567)"
+      },
+      "notes": "G7 advertises with sensor serial in name"
+    },
+    {
+      "step": 3,
+      "state": "connecting",
+      "operation": "DISCOVER_SERVICES",
+      "description": "Discover G7 CGM service and characteristics",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 358,
+      "action": {
+        "method": "peripheral.discoverServices([cgmServiceUUID])",
+        "service_uuid": "F8083532-849E-531C-C594-30F1F86A4EA5",
+        "characteristics": [
+          { "uuid": "F8083533-849E-531C-C594-30F1F86A4EA5", "name": "auth", "properties": ["write", "notify"] },
+          { "uuid": "F8083534-849E-531C-C594-30F1F86A4EA5", "name": "control", "properties": ["write", "notify"] },
+          { "uuid": "F8083535-849E-531C-C594-30F1F86A4EA5", "name": "backfill", "properties": ["write", "notify"] }
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "state": "connecting → pairing",
+      "operation": "SUBSCRIBE_AUTH",
+      "description": "Subscribe to auth characteristic notifications",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 415,
+      "action": {
+        "method": "peripheral.subscribe(to: authCharacteristic)",
+        "characteristic": "auth_uuid"
+      }
+    },
+    {
+      "step": 5,
+      "state": "pairing",
+      "operation": "JPAKE_ROUND1_TX",
+      "description": "Send J-PAKE Round 1 message with g^x1, g^x2 and ZK proofs",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 132,
+      "tx": {
+        "raw_hex": "02 [gx1:32] [gx2:32] [zkp1:80] [zkp2:80]",
+        "opcode": "0x02",
+        "opcode_name": "AuthRound1",
+        "length": 225,
+        "format": "[opcode:1] + [gx1:32] + [gx2:32] + [zkp1:80] + [zkp2:80]",
+        "fields": {
+          "gx1": "First public key g^x1 (P-256 point, X coordinate)",
+          "gx2": "Second public key g^x2 (P-256 point, X coordinate)",
+          "zkp1": "Zero-knowledge proof for x1 (commitment:32 + challenge:16 + response:32)",
+          "zkp2": "Zero-knowledge proof for x2 (commitment:32 + challenge:16 + response:32)"
+        }
+      },
+      "characteristic": "auth_uuid",
+      "notes": "Write to Auth characteristic with response"
+    },
+    {
+      "step": 6,
+      "state": "pairing → authenticating",
+      "operation": "JPAKE_ROUND1_RX",
+      "description": "Receive J-PAKE Round 1 response from sensor",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 453,
+      "rx": {
+        "raw_hex": "02 [gx3:32] [gx4:32] [zkp3:80] [zkp4:80]",
+        "opcode": "0x02",
+        "opcode_name": "AuthRound1",
+        "length": 225,
+        "format": "[opcode:1] + [gx3:32] + [gx4:32] + [zkp3:80] + [zkp4:80]",
+        "fields": {
+          "gx3": "Sensor public key g^x3",
+          "gx4": "Sensor public key g^x4",
+          "zkp3": "Zero-knowledge proof for x3",
+          "zkp4": "Zero-knowledge proof for x4"
+        }
+      },
+      "characteristic": "auth_uuid",
+      "validation": {
+        "steps": ["Verify zkp3 structure", "Verify zkp4 structure", "Store gx3, gx4 for Round 2"]
+      }
+    },
+    {
+      "step": 7,
+      "state": "authenticating",
+      "operation": "JPAKE_ROUND2_TX",
+      "description": "Send J-PAKE Round 2 message with computed A value",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 188,
+      "tx": {
+        "raw_hex": "03 [A:32] [zkpA:80]",
+        "opcode": "0x03",
+        "opcode_name": "AuthRound2",
+        "length": 113,
+        "format": "[opcode:1] + [A:32] + [zkpA:80]",
+        "compute": {
+          "A": "g^((x1+x3+x4)*x2*s) where s = password_scalar(sensor_code)",
+          "password_derivation": "ScalarOperations.passwordToScalar(sensorCode)"
+        }
+      },
+      "characteristic": "auth_uuid"
+    },
+    {
+      "step": 8,
+      "state": "authenticating",
+      "operation": "JPAKE_ROUND2_RX",
+      "description": "Receive J-PAKE Round 2 response from sensor",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 484,
+      "rx": {
+        "raw_hex": "03 [B:32] [zkpB:80]",
+        "opcode": "0x03",
+        "opcode_name": "AuthRound2",
+        "length": 113,
+        "format": "[opcode:1] + [B:32] + [zkpB:80]",
+        "fields": {
+          "B": "Sensor's Round 2 value",
+          "zkpB": "Zero-knowledge proof for B"
+        }
+      },
+      "characteristic": "auth_uuid",
+      "validation": {
+        "steps": ["Verify zkpB structure", "Compute shared key K from B"]
+      }
+    },
+    {
+      "step": 9,
+      "state": "authenticating",
+      "operation": "COMPUTE_SESSION_KEY",
+      "description": "Compute shared session key from J-PAKE exchange",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 382,
+      "compute": {
+        "algorithm": "K = SHA256(B + roundTwoValue + x2 + \"G7-SESSION-KEY\")",
+        "output": "32-byte session key"
+      },
+      "notes": "Session key enables encrypted communication"
+    },
+    {
+      "step": 10,
+      "state": "authenticating",
+      "operation": "JPAKE_CONFIRM_TX",
+      "description": "Send key confirmation hash",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 215,
+      "tx": {
+        "raw_hex": "04 [confirmHash:16]",
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "length": 17,
+        "format": "[opcode:1] + [confirmHash:16]",
+        "compute": {
+          "confirmHash": "SHA256(K + \"initiator\" + \"G7-CONFIRM\")[0:16]"
+        }
+      },
+      "characteristic": "auth_uuid"
+    },
+    {
+      "step": 11,
+      "state": "authenticating",
+      "operation": "JPAKE_CONFIRM_RX",
+      "description": "Receive and verify sensor's confirmation hash",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+      "source_line": 514,
+      "rx": {
+        "raw_hex": "04 [confirmHash:16]",
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "length": 17,
+        "format": "[opcode:1] + [confirmHash:16]"
+      },
+      "validation": {
+        "expected": "SHA256(K + \"responder\" + \"G7-CONFIRM\")[0:16]",
+        "on_mismatch": "Auth failed - wrong sensor code"
+      },
+      "characteristic": "auth_uuid"
+    },
+    {
+      "step": 12,
+      "state": "authenticating",
+      "operation": "KEEPALIVE_TX",
+      "description": "Send keep-alive to maintain connection",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 473,
+      "tx": {
+        "raw_hex": "06 19",
+        "opcode": "0x06",
+        "opcode_name": "KeepAlive",
+        "length": 2,
+        "format": "[opcode:1] + [time:1]",
+        "fields": {
+          "time": "25 (0x19) - keep-alive interval in seconds"
+        }
+      },
+      "characteristic": "auth_uuid"
+    },
+    {
+      "step": 13,
+      "state": "authenticating → streaming",
+      "operation": "REQUEST_SENSOR_INFO",
+      "description": "Request sensor information after authentication",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 516,
+      "tx": {
+        "raw_hex": "20",
+        "opcode": "0x20",
+        "opcode_name": "SensorInfoTx",
+        "length": 1,
+        "format": "[opcode:1]"
+      },
+      "characteristic": "control_uuid"
+    },
+    {
+      "step": 14,
+      "state": "streaming",
+      "operation": "SUBSCRIBE_CONTROL",
+      "description": "Subscribe to control characteristic for glucose notifications",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 492,
+      "action": {
+        "method": "peripheral.subscribe(to: controlCharacteristic)"
+      }
+    },
+    {
+      "step": 15,
+      "state": "streaming",
+      "operation": "GLUCOSE_TX",
+      "description": "Request initial glucose reading",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift",
+      "source_line": 498,
+      "tx": {
+        "raw_hex": "4E",
+        "opcode": "0x4E",
+        "opcode_name": "GlucoseTx",
+        "length": 1,
+        "format": "[opcode:1]"
+      },
+      "characteristic": "control_uuid",
+      "notes": "G7 uses opcode 0x4E (different from G6's 0x30)"
+    },
+    {
+      "step": 16,
+      "state": "streaming",
+      "operation": "GLUCOSE_RX",
+      "description": "Receive glucose reading notification",
+      "source_file": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Messages.swift",
+      "source_line": 113,
+      "rx": {
+        "raw_hex": "4F 01 04 00 00 01 00 e8 03 00 00 78 00 7c 00 05 e8 03 00 00",
+        "opcode": "0x4F",
+        "opcode_name": "GlucoseRx",
+        "length": 20,
+        "format": "[opcode:1] + [algorithmState:1] + [sensorState:1] + [sequence:4] + [timestamp:4] + [glucose:2] + [predicted:2] + [trend:1] + [transmitterTime:4]",
+        "fields": {
+          "algorithmState": "0x01 (okay)",
+          "sensorState": "0x04 (okay)",
+          "sequence": 1,
+          "timestamp": 1000,
+          "glucoseValue": 120,
+          "predictedGlucose": 124,
+          "trend": 5,
+          "transmitterTime": 1000
+        }
+      },
+      "characteristic": "control_uuid"
+    }
+  ],
+
+  "test_vectors": [
+    {
+      "name": "G7GlucoseRx message parsing",
+      "source": "packages/CGMKit/Tests/CGMKitTests/DexcomG7ProtocolTests.swift",
+      "input_hex": "4f0104000001e803000078007c0500000000",
+      "expected": {
+        "opcode": "0x4F",
+        "algorithmState": 1,
+        "sensorState": 4,
+        "glucose": 120,
+        "predicted": 124,
+        "trend": 5,
+        "isValid": true
+      }
+    },
+    {
+      "name": "G7KeepAlive message format",
+      "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Messages.swift",
+      "expected_hex": "0619",
+      "format": "[opcode:0x06][time:0x19]",
+      "fields": {
+        "time": 25
+      }
+    },
+    {
+      "name": "G7 sensor serial match",
+      "sensor_serial": "ABC1234567",
+      "advertisement_name_patterns": ["DexcomXX", "ABC1234567"],
+      "match_algorithm": "name.contains(sensorSerial)"
+    },
+    {
+      "name": "J-PAKE ZKP structure",
+      "zkp_length": 80,
+      "commitment_offset": 0,
+      "commitment_length": 32,
+      "challenge_offset": 32,
+      "challenge_length": 16,
+      "response_offset": 48,
+      "response_length": 32
+    }
+  ],
+
+  "error_handling": {
+    "code_mismatch": {
+      "description": "Wrong 4-digit sensor code causes J-PAKE confirmation failure",
+      "trigger": "Confirmation hash mismatch at step 11",
+      "error": "CGMError.invalidSensorCode",
+      "callback": "onCodeMismatch()",
+      "recovery": "updateSensorCode(newCode) and retry",
+      "trace": "BLE-QUIRK-001"
+    },
+    "bluetooth_unavailable": {
+      "trigger": "central.state != .poweredOn",
+      "error": "CGMError.bluetoothUnavailable"
+    },
+    "sensor_not_found": {
+      "trigger": "No matching sensor during scan timeout",
+      "error": "CGMError.sensorNotFound"
+    },
+    "connection_failed": {
+      "trigger": "BLE connection or service discovery fails",
+      "error": "CGMError.connectionFailed"
+    }
+  },
+
+  "connection_modes": {
+    "direct": {
+      "description": "Full BLE connection with J-PAKE authentication",
+      "uses_auth": true,
+      "flow": "scan → connect → J-PAKE → stream"
+    },
+    "passiveBLE": {
+      "description": "Passive scanning without connecting (observe advertisements)",
+      "uses_auth": false,
+      "state": "passive",
+      "notes": "G7 doesn't broadcast glucose in advertisements; use with HealthKit"
+    },
+    "healthKitObserver": {
+      "description": "HealthKit-only mode, no BLE scanning",
+      "uses_auth": false,
+      "state": "passive",
+      "notes": "Relies on Dexcom app writing to HealthKit"
+    }
+  },
+
+  "result": {
+    "success": true,
+    "final_state": "streaming",
+    "authenticated": true,
+    "session_key_derived": true,
+    "glucose_streaming": true
+  },
+
+  "validation": {
+    "total_steps": 16,
+    "jpake_rounds": 3,
+    "state_sequence": ["idle", "scanning", "connecting", "pairing", "authenticating", "streaming"],
+    "characteristics_used": ["auth_uuid", "control_uuid"],
+    "crypto_validated": {
+      "curve": "P-256",
+      "zkp_structure": "commitment:32 + challenge:16 + response:32",
+      "confirmation_hash": "SHA256(K + role + \"G7-CONFIRM\")[0:16]"
+    }
+  },
+
+  "related_sessions": [
+    { "id": "SESSION-G7-001b", "name": "G7 J-PAKE Round 1 vectors", "status": "open" },
+    { "id": "SESSION-G7-001c", "name": "G7 J-PAKE Round 2 vectors", "status": "open" },
+    { "id": "SESSION-G7-001d", "name": "G7 key confirmation vectors", "status": "open" }
+  ]
+}

@@ -1,0 +1,347 @@
+{
+  "session_id": "SESSION-DASH-REJECTION-001",
+  "session_name": "Omnipod DASH Rejection Scenarios",
+  "description": "Synthesized rejection/failure conditions for DASH BLE communication and pod faults. Used for testing error handling.",
+  "source": "Synthesized from DASHFaultInjector.swift and EROS-COMMAND-REFERENCE.md",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+  "trace": "DASH-FIX-014",
+  "created": "2026-02-16",
+
+  "rejection_scenarios": [
+    {
+      "scenario_id": "REJECT-001",
+      "name": "Pod already paired",
+      "description": "Attempting to pair with a pod that's already paired to another device",
+      "trigger_state": "pairing",
+      "fault_type": "pairingAlreadyPaired",
+      "error": {
+        "type": "PumpError.podAlreadyPaired",
+        "message": "Pod is already paired to another device",
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "pairing → error",
+        "callback": "onPairingRejected(reason: .alreadyPaired)",
+        "user_action_required": "Use different pod or reset pairing on original device"
+      },
+      "test_setup": {
+        "mock_action": "Return pairing rejected response"
+      }
+    },
+    {
+      "scenario_id": "REJECT-002",
+      "name": "Pod expired",
+      "description": "Pod has exceeded 72-hour maximum life",
+      "trigger_state": "connected",
+      "fault_type": "podExpired",
+      "fault_code": "0x1C",
+      "rx_message": {
+        "command": "StatusResponse (0x1d)",
+        "pod_progress_status": "expired"
+      },
+      "error": {
+        "type": "PumpError.podExpired",
+        "message": "Pod has expired (72 hour limit exceeded)",
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "connected → deactivating",
+        "callback": "onPodExpired()",
+        "user_action_required": "Deactivate and replace pod"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with expired pod progress"
+      }
+    },
+    {
+      "scenario_id": "REJECT-003",
+      "name": "Occlusion detected",
+      "description": "Pod detected insulin delivery occlusion",
+      "trigger_state": "delivering",
+      "fault_type": "occlusion",
+      "fault_code": "0x14",
+      "rx_message": {
+        "command": "StatusResponse (0x1d)",
+        "alerts": ["slot5Immediate"],
+        "fault_event_code": "0x14"
+      },
+      "error": {
+        "type": "PumpError.occlusion",
+        "message": "Occlusion detected - check infusion site",
+        "is_alarm": true,
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "delivering → alarming",
+        "callback": "onPodAlarm(fault: .occlusion)",
+        "user_action_required": "Replace pod immediately",
+        "alarm_acknowledgement": "required"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with occlusion fault"
+      }
+    },
+    {
+      "scenario_id": "REJECT-004",
+      "name": "Empty reservoir",
+      "description": "Pod reservoir is empty or below minimum",
+      "trigger_state": "delivering",
+      "fault_type": "emptyReservoir",
+      "fault_code": "0x18",
+      "rx_message": {
+        "command": "StatusResponse (0x1d)",
+        "reservoir_level": 0.0,
+        "fault_event_code": "0x18"
+      },
+      "error": {
+        "type": "PumpError.emptyReservoir",
+        "message": "Pod reservoir is empty",
+        "is_alarm": true,
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "delivering → alarming",
+        "callback": "onPodAlarm(fault: .emptyReservoir)",
+        "user_action_required": "Replace pod"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with empty reservoir fault"
+      }
+    },
+    {
+      "scenario_id": "REJECT-005",
+      "name": "EAP-AKA authentication rejected",
+      "description": "Pod rejected key exchange during encryption setup",
+      "trigger_state": "encrypting",
+      "fault_type": "pairingAKARejected",
+      "error": {
+        "type": "PumpError.authenticationFailed",
+        "message": "Pod rejected authentication",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "encrypting → error",
+        "callback": "onAuthenticationFailed()",
+        "retry_strategy": "Disconnect and retry pairing"
+      },
+      "test_setup": {
+        "mock_action": "Return EAP-AKA rejection message"
+      }
+    },
+    {
+      "scenario_id": "REJECT-006",
+      "name": "BLE NACK error",
+      "description": "Pod sent NACK in response to command",
+      "trigger_state": "commanding",
+      "fault_type": "bleNackError",
+      "fault_code": "0xAB",
+      "rx_message": {
+        "type": "NACK",
+        "reason": "invalid_sequence"
+      },
+      "error": {
+        "type": "PumpError.nackReceived",
+        "message": "Pod rejected command (NACK)",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "commanding → retry",
+        "callback": "onNackReceived(reason:)",
+        "retry_strategy": "Reset sequence and retry"
+      },
+      "test_setup": {
+        "mock_action": "Return NACK packet instead of response"
+      }
+    },
+    {
+      "scenario_id": "REJECT-007",
+      "name": "Pod deactivated",
+      "description": "Attempting to communicate with deactivated pod",
+      "trigger_state": "connecting",
+      "fault_type": "podDeactivated",
+      "rx_message": {
+        "command": "StatusResponse (0x1d)",
+        "pod_progress_status": "inactive"
+      },
+      "error": {
+        "type": "PumpError.podDeactivated",
+        "message": "Pod has been deactivated",
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onPodDeactivated()",
+        "user_action_required": "Pair new pod"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with inactive progress"
+      }
+    },
+    {
+      "scenario_id": "REJECT-008",
+      "name": "Bolus over-infusion fault",
+      "description": "Pod detected bolus delivery exceeded expected amount",
+      "trigger_state": "bolusing",
+      "fault_type": "bolusOverInfusion",
+      "fault_code": "0x85",
+      "rx_message": {
+        "command": "StatusResponse (0x1d)",
+        "fault_event_code": "0x85"
+      },
+      "error": {
+        "type": "PumpError.deliveryFault",
+        "message": "Bolus over-infusion detected - SEEK MEDICAL ATTENTION",
+        "is_alarm": true,
+        "is_critical": true,
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "bolusing → alarming",
+        "callback": "onCriticalFault(fault: .bolusOverInfusion)",
+        "user_action_required": "SEEK MEDICAL ATTENTION - possible insulin overdose"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with over-infusion fault"
+      }
+    },
+    {
+      "scenario_id": "REJECT-009",
+      "name": "BLE CRC failure",
+      "description": "Pod reported CRC check failure in received packet",
+      "trigger_state": "commanding",
+      "fault_type": "bleCRCFailure",
+      "fault_code": "0xA8",
+      "error": {
+        "type": "PumpError.communicationError",
+        "message": "Packet CRC failure - will retry",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "commanding → retry",
+        "callback": "onCRCFailure()",
+        "retry_strategy": "Resend command"
+      },
+      "test_setup": {
+        "mock_action": "Return CRC failure status code"
+      }
+    },
+    {
+      "scenario_id": "REJECT-010",
+      "name": "Pod screaming (continuous alarm)",
+      "description": "Pod in screamer mode due to unacknowledged critical alarm",
+      "trigger_state": "any",
+      "fault_type": "podScreener",
+      "error": {
+        "type": "PumpError.podAlarming",
+        "message": "Pod is alarming continuously",
+        "is_alarm": true,
+        "recoverable": false
+      },
+      "expected_behavior": {
+        "state_transition": "any → alarming",
+        "callback": "onPodScreener()",
+        "user_action_required": "Remove pod - cannot be silenced"
+      },
+      "test_setup": {
+        "mock_action": "Return StatusResponse with screamer state"
+      }
+    }
+  ],
+
+  "pod_progress_states": {
+    "0x00": { "name": "initial", "can_communicate": false },
+    "0x01": { "name": "tankPowerActivated", "can_communicate": true },
+    "0x02": { "name": "tankFillCompleted", "can_communicate": true },
+    "0x03": { "name": "pairingCompleted", "can_communicate": true },
+    "0x04": { "name": "priming", "can_communicate": true },
+    "0x05": { "name": "primingCompleted", "can_communicate": true },
+    "0x06": { "name": "basalProgramSet", "can_communicate": true },
+    "0x07": { "name": "aboveFiftyUnits", "can_communicate": true },
+    "0x08": { "name": "belowFiftyUnits", "can_communicate": true },
+    "0x09": { "name": "oneNotUsedYet", "can_communicate": true },
+    "0x0D": { "name": "activating", "can_communicate": true },
+    "0x0E": { "name": "faultEventOccurred", "can_communicate": false },
+    "0x0F": { "name": "inactive", "can_communicate": false }
+  },
+
+  "fault_codes": {
+    "0x14": { "name": "occlusion", "is_alarm": true },
+    "0x18": { "name": "emptyReservoir", "is_alarm": true },
+    "0x1C": { "name": "podExpired", "is_alarm": true },
+    "0x40": { "name": "encoderOpenHigh", "is_alarm": true },
+    "0x42": { "name": "encoderCountLow", "is_alarm": true },
+    "0x43": { "name": "encoderCountProblem", "is_alarm": true },
+    "0x6A": { "name": "timedPumpCheck", "is_alarm": true },
+    "0x80": { "name": "basalUnderInfusion", "is_alarm": true },
+    "0x81": { "name": "basalOverInfusion", "is_alarm": true, "is_critical": true },
+    "0x82": { "name": "tempBasalUnderInfusion", "is_alarm": true },
+    "0x83": { "name": "tempBasalOverInfusion", "is_alarm": true, "is_critical": true },
+    "0x84": { "name": "bolusUnderInfusion", "is_alarm": true },
+    "0x85": { "name": "bolusOverInfusion", "is_alarm": true, "is_critical": true },
+    "0xA0": { "name": "bleRetryTimeout", "is_alarm": false },
+    "0xA8": { "name": "bleCRCFailure", "is_alarm": false },
+    "0xA9": { "name": "blePingTimeout", "is_alarm": false },
+    "0xAA": { "name": "bleExcessiveResets", "is_alarm": false },
+    "0xAB": { "name": "bleNackError", "is_alarm": false }
+  },
+
+  "test_vectors": [
+    {
+      "name": "Fault code parsing",
+      "input_hex": "1d28008200004446ebff",
+      "expected": {
+        "is_status_response": true,
+        "has_fault": true,
+        "fault_code": "0x14"
+      }
+    },
+    {
+      "name": "Pod progress state extraction",
+      "status_response_hex": "1f00ee84300a1d18003f1800004297ff8128",
+      "expected": {
+        "pod_progress_status": "aboveFiftyUnits",
+        "can_communicate": true
+      }
+    },
+    {
+      "name": "Occlusion alarm handling sequence",
+      "scenario": "REJECT-003",
+      "callback_sequence": [
+        "onStatusReceived(status)",
+        "onFaultDetected(fault: .occlusion)",
+        "onPodAlarm(fault: .occlusion)",
+        "notifyUser(alarm: .occlusion)"
+      ]
+    }
+  ],
+
+  "recovery_patterns": {
+    "occlusion": {
+      "steps": [
+        "Stop all delivery (already stopped by pod)",
+        "Acknowledge alarm if possible",
+        "Guide user to deactivate pod",
+        "Assist with new pod activation"
+      ],
+      "can_silence": false
+    },
+    "ble_nack": {
+      "steps": [
+        "Log NACK reason",
+        "Reset BLE sequence number",
+        "Retry command",
+        "If persistent, disconnect and reconnect"
+      ],
+      "can_retry": true
+    },
+    "authentication_failed": {
+      "steps": [
+        "Disconnect BLE",
+        "Clear session state",
+        "Retry pairing from beginning"
+      ],
+      "can_retry": true
+    }
+  }
+}

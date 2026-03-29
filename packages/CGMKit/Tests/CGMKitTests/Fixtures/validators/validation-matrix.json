@@ -1,0 +1,145 @@
+{
+  "version": "1.0",
+  "trace": "PROTO-CMP-004",
+  "generated": "2026-02-13",
+  "protocols": [
+    {
+      "id": "g6-auth",
+      "name": "Dexcom G6 Authentication",
+      "reference": "CGMBLEKit",
+      "source": "LoopKit/CGMBLEKit",
+      "testCount": 10,
+      "status": "validated",
+      "components": [
+        {
+          "name": "keyDerivation",
+          "status": "pass",
+          "description": "AES-128-ECB key from transmitter ID"
+        },
+        {
+          "name": "tokenHash",
+          "status": "pass",
+          "description": "8-byte hash from 8-byte token"
+        },
+        {
+          "name": "authRequestTx",
+          "status": "pass",
+          "description": "10-byte message with opcode + token + endByte"
+        },
+        {
+          "name": "authChallengeRx",
+          "status": "pass",
+          "description": "17-byte message with tokenHash + challenge"
+        },
+        {
+          "name": "authFlow",
+          "status": "pass",
+          "description": "End-to-end authentication sequence"
+        }
+      ]
+    },
+    {
+      "id": "libre2-crypto",
+      "name": "Libre2 Decryption",
+      "reference": "LibreTransmitter",
+      "source": "LoopKit/LibreTransmitter",
+      "testCount": 33,
+      "status": "validated",
+      "components": [
+        {
+          "name": "keyConstants",
+          "status": "pass",
+          "description": "XOR key array [0xA0C5, 0x6860, 0x0000, 0x14C6]"
+        },
+        {
+          "name": "processCrypto",
+          "status": "pass",
+          "description": "XOR stream cipher core"
+        },
+        {
+          "name": "prepareVariables",
+          "status": "pass",
+          "description": "Key schedule from sensor ID"
+        },
+        {
+          "name": "framDecryption",
+          "status": "pass",
+          "description": "344-byte FRAM decryption (LIBRE-SYNTH-001)"
+        },
+        {
+          "name": "bleDecryption",
+          "status": "pass",
+          "description": "46-byte BLE packet decryption with CRC"
+        },
+        {
+          "name": "crc16",
+          "status": "pass",
+          "description": "CRC-16 validation"
+        },
+        {
+          "name": "framStructure",
+          "status": "pass",
+          "description": "Header/body/footer parsing (LIBRE-SYNTH-001)"
+        },
+        {
+          "name": "activationParams",
+          "status": "pass",
+          "description": "5-byte activation parameters (LIBRE-SYNTH-001)"
+        },
+        {
+          "name": "streamingUnlock",
+          "status": "pass",
+          "description": "12-byte unlock payload (LIBRE-SYNTH-001)"
+        }
+      ]
+    },
+    {
+      "id": "g7-jpake",
+      "name": "Dexcom G7 J-PAKE",
+      "reference": "xDrip libkeks + DiaBLE",
+      "source": "NightscoutFoundation/xDrip, gui-dos/DiaBLE",
+      "testCount": 12,
+      "status": "validated",
+      "components": [
+        {
+          "name": "curveParameters",
+          "status": "pass",
+          "description": "secp256r1 (P-256) generator point"
+        },
+        {
+          "name": "packetFormat",
+          "status": "pass",
+          "description": "160-byte packet (5 x 32-byte fields)"
+        },
+        {
+          "name": "partyIdentifiers",
+          "status": "pass",
+          "description": "6-byte client/server IDs"
+        },
+        {
+          "name": "passwordFormat",
+          "status": "pass",
+          "description": "UTF-8 (4-digit) or 00-prefixed (6-digit)"
+        },
+        {
+          "name": "round1Output",
+          "status": "pass",
+          "description": "gx1, gx2, zkp1, zkp2 sizes"
+        },
+        {
+          "name": "opcodes",
+          "status": "pass",
+          "description": "0x0A phases 0/1/2"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "totalTests": 55,
+    "passedTests": 55,
+    "failedTests": 0,
+    "protocolsValidated": 3,
+    "bugsFound": 3,
+    "bugsFixed": 3
+  }
+}

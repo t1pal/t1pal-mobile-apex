@@ -1,0 +1,149 @@
+{
+  "test_name": "reservoir_level_parsing",
+  "description": "MDT-SYNTH-002: Test vectors for ReadRemainingInsulin parsing",
+  "reference": "decocare/commands.py ReadRemainingInsulin (code=115), MinimedKit ReadRemainingInsulinMessageBody",
+  "protocol": {
+    "opcode": "0x73",
+    "opcode_decimal": 115,
+    "description": "Read Remaining Insulin",
+    "response_format": "pre-523: [0..1]=strokes (big-endian, /10); 523+: [2..3]=strokes (big-endian, /40)"
+  },
+  "vectors": [
+    {
+      "name": "Loop Test Vector - Model 723 80.875U",
+      "source": "MinimedKitTests/ReadRemainingInsulinMessageBodyTests.swift",
+      "full_message_hex": "a7594040730400000ca3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "body_start_byte": 5,
+      "pump_model": "723",
+      "generation": "523+",
+      "scale": 40,
+      "start_byte": 2,
+      "end_byte": 4,
+      "response_hex": "00 00 0C A3",
+      "response_bytes": [0, 0, 12, 163],
+      "strokes": 3235,
+      "expected_units": 80.875,
+      "notes": "From Loop/rileylink_ios test: strokes = (0x0C << 8) | 0xA3 = 3235; units = 3235 / 40 = 80.875"
+    },
+    {
+      "name": "Loop Test Vector - Model 522 135.0U",
+      "source": "MinimedKitTests/ReadRemainingInsulinMessageBodyTests.swift",
+      "full_message_hex": "a7578398730205460000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "body_start_byte": 5,
+      "pump_model": "522",
+      "generation": "pre-523",
+      "scale": 10,
+      "start_byte": 0,
+      "end_byte": 2,
+      "response_hex": "05 46",
+      "response_bytes": [5, 70],
+      "strokes": 1350,
+      "expected_units": 135.0,
+      "notes": "From Loop/rileylink_ios test: strokes = (0x05 << 8) | 0x46 = 1350; units = 1350 / 10 = 135.0"
+    },
+    {
+      "name": "Model 515 - 120.0U remaining",
+      "source": "synthesized from decocare",
+      "pump_model": "515",
+      "generation": "pre-523",
+      "scale": 10,
+      "start_byte": 0,
+      "end_byte": 2,
+      "response_hex": "04 B0",
+      "response_bytes": [4, 176],
+      "strokes": 1200,
+      "expected_units": 120.0,
+      "notes": "strokes = (0x04 << 8) | 0xB0 = 1200; units = 1200 / 10 = 120.0"
+    },
+    {
+      "name": "Model 515 - 50.5U remaining",
+      "pump_model": "515",
+      "generation": "pre-523",
+      "scale": 10,
+      "start_byte": 0,
+      "end_byte": 2,
+      "response_hex": "01 F9",
+      "response_bytes": [1, 249],
+      "strokes": 505,
+      "expected_units": 50.5,
+      "notes": "strokes = (0x01 << 8) | 0xF9 = 505; units = 505 / 10 = 50.5"
+    },
+    {
+      "name": "Model 515 - 0.0U empty",
+      "pump_model": "515",
+      "generation": "pre-523",
+      "scale": 10,
+      "start_byte": 0,
+      "end_byte": 2,
+      "response_hex": "00 00",
+      "response_bytes": [0, 0],
+      "strokes": 0,
+      "expected_units": 0.0,
+      "notes": "Empty reservoir"
+    },
+    {
+      "name": "Model 523 - 180.0U remaining",
+      "pump_model": "523",
+      "generation": "523+",
+      "scale": 40,
+      "start_byte": 2,
+      "end_byte": 4,
+      "response_hex": "00 00 1C 20",
+      "response_bytes": [0, 0, 28, 32],
+      "strokes": 7200,
+      "expected_units": 180.0,
+      "notes": "strokes = (0x1C << 8) | 0x20 = 7200; units = 7200 / 40 = 180.0"
+    },
+    {
+      "name": "Model 523 - 75.25U remaining",
+      "pump_model": "523",
+      "generation": "523+",
+      "scale": 40,
+      "start_byte": 2,
+      "end_byte": 4,
+      "response_hex": "00 00 0B BE",
+      "response_bytes": [0, 0, 11, 190],
+      "strokes": 3006,
+      "expected_units": 75.15,
+      "notes": "strokes = (0x0B << 8) | 0xBE = 3006; units = 3006 / 40 = 75.15"
+    },
+    {
+      "name": "Model 554 - 200.0U full reservoir",
+      "pump_model": "554",
+      "generation": "523+",
+      "scale": 40,
+      "start_byte": 2,
+      "end_byte": 4,
+      "response_hex": "00 00 1F 40",
+      "response_bytes": [0, 0, 31, 64],
+      "strokes": 8000,
+      "expected_units": 200.0,
+      "notes": "strokes = (0x1F << 8) | 0x40 = 8000; units = 8000 / 40 = 200.0"
+    },
+    {
+      "name": "Model 723 - 300.0U full large reservoir",
+      "pump_model": "723",
+      "generation": "523+",
+      "scale": 40,
+      "start_byte": 2,
+      "end_byte": 4,
+      "response_hex": "00 00 2E E0",
+      "response_bytes": [0, 0, 46, 224],
+      "strokes": 12000,
+      "expected_units": 300.0,
+      "notes": "strokes = (0x2E << 8) | 0xE0 = 12000; units = 12000 / 40 = 300.0"
+    }
+  ],
+  "python_compat": {
+    "description": "Python parsing logic from decocare/commands.py ReadRemainingInsulin.getData()",
+    "code_pre523": "strokes = lib.BangInt(data[0:2])\nunits = strokes / 10.0",
+    "code_523plus": "strokes = lib.BangInt(data[2:4])\nunits = strokes / 40.0"
+  },
+  "model_to_scale_mapping": {
+    "description": "Model numbers and their corresponding scale values",
+    "pre_523_models": ["508", "511", "512", "515", "522"],
+    "post_523_models": ["523", "530", "540", "554", "630", "640", "670", "723", "751", "754", "770", "780"],
+    "pre_523_scale": 10,
+    "post_523_scale": 40
+  }
+}

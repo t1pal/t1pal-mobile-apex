@@ -1,0 +1,72 @@
+{
+  "_comment": "Dexcom G6 Authentication Protocol Constants",
+  "_source": "CGMBLEKit (LoopKit), xDripG5",
+  "_updated": "2026-02-08",
+  
+  "algorithm": "AES-128-ECB",
+  "keyLength": 16,
+  "tokenLength": 8,
+  "hashLength": 8,
+  "challengeLength": 8,
+  
+  "keyDerivation": {
+    "_description": "Key = UTF-8('00' + id + '00' + id)",
+    "prefix": "00",
+    "separator": "00",
+    "format": "00{id}00{id}",
+    "example": {
+      "transmitterId": "123456",
+      "keyHex": "30303132333435363030313233343536",
+      "keyAscii": "001234560012345 6"
+    }
+  },
+  
+  "hashOperation": {
+    "_description": "Hash = first 8 bytes of AES(data + data)",
+    "inputFormat": "data || data",
+    "outputSlice": [0, 8]
+  },
+  
+  "opcodes": {
+    "authRequestTx": "0x01",
+    "authRequestRx": "0x03",
+    "authChallengeTx": "0x04",
+    "authChallengeRx": "0x05",
+    "keepAliveTx": "0x06",
+    "bondRequestTx": "0x07"
+  },
+  
+  "messageFormats": {
+    "authRequestTx": {
+      "length": 10,
+      "fields": [
+        { "name": "opcode", "offset": 0, "length": 1 },
+        { "name": "token", "offset": 1, "length": 8 },
+        { "name": "endByte", "offset": 9, "length": 1, "value": "0x02" }
+      ]
+    },
+    "authRequestRx": {
+      "length": 17,
+      "fields": [
+        { "name": "opcode", "offset": 0, "length": 1 },
+        { "name": "tokenHash", "offset": 1, "length": 8 },
+        { "name": "challenge", "offset": 9, "length": 8 }
+      ]
+    },
+    "authChallengeTx": {
+      "length": 9,
+      "fields": [
+        { "name": "opcode", "offset": 0, "length": 1 },
+        { "name": "challengeHash", "offset": 1, "length": 8 }
+      ]
+    },
+    "authChallengeRx": {
+      "length": 3,
+      "fields": [
+        { "name": "opcode", "offset": 0, "length": 1 },
+        { "name": "authenticated", "offset": 1, "length": 1 },
+        { "name": "bonded", "offset": 2, "length": 1 }
+      ]
+    }
+  }
+}

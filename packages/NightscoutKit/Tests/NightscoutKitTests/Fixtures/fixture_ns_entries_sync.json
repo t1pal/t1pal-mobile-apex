@@ -1,0 +1,164 @@
+{
+  "_source": "NightscoutKit EntriesQuery + EntryDeduplicator (T1Pal)",
+  "_task": "NS-SESSION-001",
+  "_description": "Full entries sync sequence: fetch → dedupe → upload → confirm",
+  "_format": {
+    "session": "Complete TX/RX sequence for bidirectional entries sync",
+    "endpoints": {
+      "GET /api/v1/entries": "Fetch existing entries with optional filters",
+      "POST /api/v1/entries": "Upload new entries, server returns inserted count"
+    },
+    "deduplication": "Client-side dedup by syncIdentifier before upload",
+    "timestamps": "ISO 8601 format, date field is epoch milliseconds"
+  },
+  "test_vectors": [
+    {
+      "id": "entries_sync_full_sequence",
+      "description": "Complete sync: fetch 100 entries, dedupe, upload 5 new",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries",
+          "query": "count=100&find[type]=sgv",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "count": 100,
+            "sample_entry": {
+              "_id": "abc123def456",
+              "type": "sgv",
+              "sgv": 142,
+              "direction": "Flat",
+              "dateString": "2026-02-14T02:30:00.000Z",
+              "date": 1739500200000,
+              "device": "dexcom",
+              "identifier": "dexcom:sgv:1739500200000"
+            }
+          }
+        },
+        {
+          "step": 3,
+          "action": "dedupe",
+          "description": "Client compares local entries against fetched, finds 5 new",
+          "local_count": 105,
+          "remote_count": 100,
+          "new_count": 5,
+          "duplicate_count": 0
+        },
+        {
+          "step": 4,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "count": 5,
+            "sample_entry": {
+              "type": "sgv",
+              "sgv": 138,
+              "direction": "FortyFiveDown",
+              "dateString": "2026-02-14T02:35:00.000Z",
+              "date": 1739500500000,
+              "device": "T1Pal",
+              "identifier": "T1Pal:sgv:1739500500000"
+            }
+          }
+        },
+        {
+          "step": 5,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 5,
+            "deduped": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "entries_sync_with_server_dedupe",
+      "description": "Upload includes duplicates, server dedupes",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body": {
+            "count": 10,
+            "note": "Some entries already exist on server"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 7,
+            "deduped": 3,
+            "message": "3 entries already existed (matched by identifier)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "entries_sync_date_range",
+      "description": "Fetch entries within specific date range",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries",
+          "query": "find[dateString][$gte]=2026-02-14T00:00:00Z&find[dateString][$lt]=2026-02-14T03:00:00Z&count=288",
+          "note": "3 hours of data at 5-min intervals = max 36 entries"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "count": 36,
+            "oldest": "2026-02-14T00:00:00.000Z",
+            "newest": "2026-02-14T02:55:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "entries_sync_empty_response",
+      "description": "Server has no entries in range",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries",
+          "query": "count=100&find[dateString][$gte]=2030-01-01T00:00:00Z"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": []
+        }
+      ]
+    }
+  ],
+  "entry_schema": {
+    "required": ["type", "sgv", "dateString", "date"],
+    "optional": ["_id", "direction", "device", "identifier", "noise", "filtered", "unfiltered", "rssi"],
+    "direction_values": ["NONE", "DoubleUp", "SingleUp", "FortyFiveUp", "Flat", "FortyFiveDown", "SingleDown", "DoubleDown", "NOT COMPUTABLE", "RATE OUT OF RANGE"]
+  }
+}

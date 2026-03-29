@@ -1,0 +1,127 @@
+{
+  "metadata": {
+    "created": "2026-02-06",
+    "source": "externals/logs/chunks/ble.log",
+    "analysis": "DDFB-005",
+    "description": "BLE advertisement patterns extracted from device logs"
+  },
+  "cgm_devices": {
+    "dexcom_g6": {
+      "service_uuid": "FEBC",
+      "manufacturer_id": "0x0D13",
+      "description": "Dexcom G6 transmitter",
+      "observed": false,
+      "expected_pattern": {
+        "service_uuids": ["0xFEBC"],
+        "name_prefix": "Dexcom",
+        "manufacturer_data": "13 0D"
+      }
+    },
+    "dexcom_g7": {
+      "service_uuid": "FEBC",
+      "manufacturer_id": "0x0D13",
+      "description": "Dexcom G7 transmitter",
+      "observed": false,
+      "expected_pattern": {
+        "service_uuids": ["0xFEBC"],
+        "local_name": true,
+        "connectable": true
+      }
+    },
+    "libre2": {
+      "service_uuid": "FDE3",
+      "manufacturer_id": "0x0007",
+      "description": "Abbott Libre 2 sensor",
+      "observed": false,
+      "expected_pattern": {
+        "service_uuids": ["0xFDE3"],
+        "manufacturer": "Abbott"
+      }
+    }
+  },
+  "pump_relay_devices": {
+    "rileylink": {
+      "observed": true,
+      "log_reference": "RileyLinkBLEKit",
+      "sessions": [
+        "Get Pump Status",
+        "Set Temp Basal"
+      ],
+      "errors_observed": [
+        "RileyLinkDeviceError.responseTimeout",
+        "PumpOpsError.deviceError"
+      ]
+    },
+    "orangelink": {
+      "observed": false,
+      "expected_pattern": {
+        "name_contains": "OrangeLink",
+        "service_uuids": ["0x1808"]
+      }
+    }
+  },
+  "observed_devices": [
+    {
+      "name": "CGMBLEKit peripheral",
+      "uuid": "AAA9BA45-0DD0-FF9C-0111-D2C70958F100",
+      "action": "Re-connecting to known peripheral",
+      "timestamp": "2026-02-05 15:09:51"
+    },
+    {
+      "name": "Dexcom G6 App",
+      "bundle_id": "com.dexcom.G6",
+      "state": "running-suspended-NotVisible",
+      "timestamp": "2026-02-05 15:09:49"
+    }
+  ],
+  "nearby_ble_devices": [
+    {
+      "name": "Anova",
+      "address": "01:02:03:04:8C:7A",
+      "rssi": -93,
+      "service_uuids": ["0xFFE0"],
+      "connectable": true
+    },
+    {
+      "name": "ET-2800 Series",
+      "address": "66:C6:D2:8C:61:B5",
+      "rssi": -85,
+      "service_uuids": ["802A0000-4EF4-4E59-B573-2BED4A4AC159"],
+      "manufacturer_data": "40 00 00 6C 02"
+    },
+    {
+      "name": "LE-Bose Micro SoundLink",
+      "address": "78:2B:64:4F:43:CF",
+      "rssi": -91,
+      "service_uuids": ["0xFEBE"],
+      "manufacturer_data": "10 03 40 22 01 30"
+    },
+    {
+      "name": "Flare RT",
+      "address": "F0:BA:E5:C9:75:01",
+      "rssi": -98,
+      "service_uuids": ["0x180A", "0x180F"],
+      "connectable": true
+    },
+    {
+      "name": "MyQ-06B",
+      "address": "0C:83:CC:11:22:18",
+      "rssi": -92,
+      "service_uuids": ["26D91A37-C279-4D0F-96A1-532CE41CE0F6"],
+      "manufacturer_data": "78 08 2E 00"
+    }
+  ],
+  "rileylink_session_log": {
+    "description": "RileyLink pump communication session",
+    "start": "2026-02-05 15:09:51.634",
+    "operation": "Get Pump Status",
+    "outcome": "responseTimeout",
+    "retry_count": 2,
+    "next_session": "Set Temp Basal"
+  },
+  "test_fixture_usage": {
+    "mock_cgm_scan": "Use cgm_devices patterns for MockBLEScanner",
+    "mock_pump_relay": "Use rileylink_session_log for PumpKit tests",
+    "nearby_interference": "Use nearby_ble_devices for scan filtering tests"
+  }
+}

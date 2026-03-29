@@ -1,0 +1,95 @@
+{
+  "test_name": "dash_key_exchange",
+  "description": "DASH-SYNTH-001: Test vectors for Omnipod DASH X25519 key exchange",
+  "reference": "OmniBLE/Bluetooth/Pair/KeyExchange.swift, OmniBLETests/Driver/Comm/pair/KeyExchangeTests.swift",
+  "protocol": {
+    "description": "Omnipod DASH pairing uses X25519 ECDH key exchange with AES-CMAC for key derivation",
+    "algorithm": "X25519 (Curve25519 ECDH)",
+    "key_derivation": "AES-CMAC with magic strings for intermediate key, LTK, and confirmation values",
+    "constants": {
+      "PUBLIC_KEY_SIZE": 32,
+      "NONCE_SIZE": 16,
+      "CMAC_SIZE": 16,
+      "INTERMEDIARY_KEY_MAGIC": "TWIt",
+      "PDM_CONF_MAGIC_PREFIX": "KC_2_U",
+      "POD_CONF_MAGIC_PREFIX": "KC_2_V"
+    }
+  },
+  "vectors": [
+    {
+      "name": "OmniBLE Test Vector - Full Key Exchange",
+      "source": "OmniBLETests/Driver/Comm/pair/KeyExchangeTests.swift testKeyExchange()",
+      "inputs": {
+        "pdm_private_key": "27ec94b71a201c5e92698d668806ae5ba00594c307cf5566e60c1fc53a6f6bb6",
+        "pdm_nonce": "edfdacb242c7f4e1d2bc4d93ca3c5706",
+        "pod_public_key": "2fe57da347cd62431528daac5fbb290730fff684afc4cfc2ed90995f58cb3b74",
+        "pod_nonce": "00000000000000000000000000000000"
+      },
+      "expected_outputs": {
+        "pdm_public_key": "f2b6940243aba536a66e19fb9a39e37f1e76a1cd50ab59b3e05313b4fc93975e",
+        "pdm_conf": "5fc3b4da865e838ceaf1e9e8bb85d1ac",
+        "pod_conf": "af4f10db5f96e5d9cd6cfc1f54f4a92f",
+        "ltk": "341e16d13f1cbf73b19d1c2964fee02b"
+      },
+      "intermediate_values": {
+        "description": "Intermediate computation values for debugging",
+        "first_key_input": "last 4 bytes of: pod_public || pdm_public || pod_nonce || pdm_nonce",
+        "ltk_data_format": "0x02 || 'TWIt' || pod_nonce || pdm_nonce || 0x0001",
+        "conf_data_format": "0x01 || 'TWIt' || pod_nonce || pdm_nonce || 0x0001"
+      },
+      "notes": "Uses mock fixed private key and nonce generators for deterministic testing"
+    }
+  ],
+  "python_compat": {
+    "description": "Python key exchange implementation using cryptography library",
+    "code": "from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey\nfrom cryptography.hazmat.primitives.cmac import CMAC\nfrom cryptography.hazmat.primitives.ciphers import algorithms\n\ndef compute_pdm_public(pdm_private_hex: str) -> str:\n    private_bytes = bytes.fromhex(pdm_private_hex)\n    private_key = X25519PrivateKey.from_private_bytes(private_bytes)\n    return private_key.public_key().public_bytes_raw().hex()\n\ndef compute_shared_secret(pdm_private_hex: str, pod_public_hex: str) -> bytes:\n    private_bytes = bytes.fromhex(pdm_private_hex)\n    public_bytes = bytes.fromhex(pod_public_hex)\n    private_key = X25519PrivateKey.from_private_bytes(private_bytes)\n    public_key = X25519PublicKey.from_public_bytes(public_bytes)\n    return private_key.exchange(public_key)\n\ndef aes_cmac(key: bytes, data: bytes) -> bytes:\n    c = CMAC(algorithms.AES(key))\n    c.update(data)\n    return c.finalize()\n\ndef derive_keys(pdm_private_hex: str, pdm_nonce_hex: str, pod_public_hex: str, pod_nonce_hex: str) -> dict:\n    pdm_private = bytes.fromhex(pdm_private_hex)\n    pdm_nonce = bytes.fromhex(pdm_nonce_hex)\n    pod_public = bytes.fromhex(pod_public_hex)\n    pod_nonce = bytes.fromhex(pod_nonce_hex)\n    \n    # Compute PDM public key\n    private_key = X25519PrivateKey.from_private_bytes(pdm_private)\n    pdm_public = private_key.public_key().public_bytes_raw()\n    \n    # Compute shared secret (curve LTK)\n    public_key = X25519PublicKey.from_public_bytes(pod_public)\n    curve_ltk = private_key.exchange(public_key)\n    \n    # First key: last 4 bytes of each\n    first_key = pod_public[-4:] + pdm_public[-4:] + pod_nonce[-4:] + pdm_nonce[-4:]\n    intermediate_key = aes_cmac(first_key, curve_ltk)\n    \n    MAGIC = b'TWIt'\n    \n    # LTK derivation\n    ltk_data = bytes([0x02]) + MAGIC + pod_nonce + pdm_nonce + bytes([0x00, 0x01])\n    ltk = aes_cmac(intermediate_key, ltk_data)\n    \n    # Confirmation key\n    conf_data = bytes([0x01]) + MAGIC + pod_nonce + pdm_nonce + bytes([0x00, 0x01])\n    conf_key = aes_cmac(intermediate_key, conf_data)\n    \n    # PDM conf\n    pdm_conf_data = b'KC_2_U' + pdm_nonce + pod_nonce\n    pdm_conf = aes_cmac(conf_key, pdm_conf_data)\n    \n    # Pod conf\n    pod_conf_data = b'KC_2_V' + pod_nonce + pdm_nonce\n    pod_conf = aes_cmac(conf_key, pod_conf_data)\n    \n    return {\n        'pdm_public': pdm_public.hex(),\n        'ltk': ltk.hex(),\n        'pdm_conf': pdm_conf.hex(),\n        'pod_conf': pod_conf.hex()\n    }",
+    "dependencies": ["cryptography>=3.0"]
+  },
+  "key_derivation_steps": {
+    "description": "Step-by-step key derivation process",
+    "steps": [
+      {
+        "step": 1,
+        "name": "Compute shared secret",
+        "operation": "X25519(pdm_private, pod_public)",
+        "output": "curve_ltk (32 bytes)"
+      },
+      {
+        "step": 2,
+        "name": "Build first key",
+        "operation": "pod_public[-4:] || pdm_public[-4:] || pod_nonce[-4:] || pdm_nonce[-4:]",
+        "output": "first_key (16 bytes)"
+      },
+      {
+        "step": 3,
+        "name": "Derive intermediate key",
+        "operation": "AES-CMAC(first_key, curve_ltk)",
+        "output": "intermediate_key (16 bytes)"
+      },
+      {
+        "step": 4,
+        "name": "Derive LTK",
+        "operation": "AES-CMAC(intermediate_key, 0x02 || 'TWIt' || pod_nonce || pdm_nonce || 0x0001)",
+        "output": "ltk (16 bytes)"
+      },
+      {
+        "step": 5,
+        "name": "Derive confirmation key",
+        "operation": "AES-CMAC(intermediate_key, 0x01 || 'TWIt' || pod_nonce || pdm_nonce || 0x0001)",
+        "output": "conf_key (16 bytes)"
+      },
+      {
+        "step": 6,
+        "name": "Compute PDM confirmation",
+        "operation": "AES-CMAC(conf_key, 'KC_2_U' || pdm_nonce || pod_nonce)",
+        "output": "pdm_conf (16 bytes)"
+      },
+      {
+        "step": 7,
+        "name": "Compute pod confirmation",
+        "operation": "AES-CMAC(conf_key, 'KC_2_V' || pod_nonce || pdm_nonce)",
+        "output": "pod_conf (16 bytes)"
+      }
+    ]
+  }
+}

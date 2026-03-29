@@ -1,0 +1,350 @@
+{
+  "_source": "CGMBLEKit GlucoseRxMessage format",
+  "_task": "G6-COEX-031",
+  "_format": {
+    "name": "GlucoseRxMessage (CGMBLEKit compatible)",
+    "opcode": "0x31",
+    "bytes[0]": "opcode (0x31 = glucoseRx)",
+    "bytes[1]": "status",
+    "bytes[2-5]": "sequence (UInt32 LE)",
+    "bytes[6-9]": "timestamp (UInt32 LE)",
+    "bytes[10-11]": "glucose(bits 0-11) + displayOnly(bit 12+) (UInt16 LE)",
+    "bytes[12]": "state (UInt8, 0x06 = hasReliableGlucose)",
+    "bytes[13]": "trend (Int8)",
+    "bytes[14-15]": "CRC16 (placeholder 0x0000)"
+  },
+  "test_vectors": [
+    {
+      "id": "normal_120",
+      "description": "Normal in-range reading 120 mg/dL, steady",
+      "hex": "31000100000010270000780006000000",
+      "expected": {
+        "status": 0,
+        "sequence": 1,
+        "timestamp": 10000,
+        "glucoseValue": 120,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 120.0,
+        "trend": 0,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "urgent_low_40",
+      "description": "Urgent low 40 mg/dL (minimum valid glucose)",
+      "hex": "31000200000020270000280006f00000",
+      "expected": {
+        "status": 0,
+        "sequence": 2,
+        "timestamp": 10016,
+        "glucoseValue": 40,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 40.0,
+        "trend": -16,
+        "isValid": true
+      },
+      "glucose_category": "urgent_low"
+    },
+    {
+      "id": "urgent_low_54",
+      "description": "Urgent low 54 mg/dL (clinical urgent low threshold)",
+      "hex": "31000300000030270000360006f80000",
+      "expected": {
+        "status": 0,
+        "sequence": 3,
+        "timestamp": 10032,
+        "glucoseValue": 54,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 54.0,
+        "trend": -8,
+        "isValid": true
+      },
+      "glucose_category": "urgent_low"
+    },
+    {
+      "id": "low_55",
+      "description": "Low 55 mg/dL (just above urgent low)",
+      "hex": "310004000000402700003700060a0000",
+      "expected": {
+        "status": 0,
+        "sequence": 4,
+        "timestamp": 10048,
+        "glucoseValue": 55,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 55.0,
+        "trend": 10,
+        "isValid": true
+      },
+      "glucose_category": "low"
+    },
+    {
+      "id": "low_69",
+      "description": "Low 69 mg/dL (just below in-range)",
+      "hex": "31000500000050270000450006050000",
+      "expected": {
+        "status": 0,
+        "sequence": 5,
+        "timestamp": 10064,
+        "glucoseValue": 69,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 69.0,
+        "trend": 5,
+        "isValid": true
+      },
+      "glucose_category": "low"
+    },
+    {
+      "id": "in_range_70",
+      "description": "In-range 70 mg/dL (lower bound of target range)",
+      "hex": "31000600000060270000460006020000",
+      "expected": {
+        "status": 0,
+        "sequence": 6,
+        "timestamp": 10080,
+        "glucoseValue": 70,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 70.0,
+        "trend": 2,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "in_range_100",
+      "description": "In-range 100 mg/dL (mid-range, optimal)",
+      "hex": "31000700000070270000640006000000",
+      "expected": {
+        "status": 0,
+        "sequence": 7,
+        "timestamp": 10096,
+        "glucoseValue": 100,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 100.0,
+        "trend": 0,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "in_range_180",
+      "description": "In-range 180 mg/dL (upper bound of target range)",
+      "hex": "31000800000080270000b40006fc0000",
+      "expected": {
+        "status": 0,
+        "sequence": 8,
+        "timestamp": 10112,
+        "glucoseValue": 180,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 180.0,
+        "trend": -4,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "high_181",
+      "description": "High 181 mg/dL (just above target range)",
+      "hex": "31000900000090270000b500060a0000",
+      "expected": {
+        "status": 0,
+        "sequence": 9,
+        "timestamp": 10128,
+        "glucoseValue": 181,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 181.0,
+        "trend": 10,
+        "isValid": true
+      },
+      "glucose_category": "high"
+    },
+    {
+      "id": "high_250",
+      "description": "High 250 mg/dL (clinical high threshold)",
+      "hex": "31000a000000a0270000fa00060f0000",
+      "expected": {
+        "status": 0,
+        "sequence": 10,
+        "timestamp": 10144,
+        "glucoseValue": 250,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 250.0,
+        "trend": 15,
+        "isValid": true
+      },
+      "glucose_category": "high"
+    },
+    {
+      "id": "urgent_high_251",
+      "description": "Urgent high 251 mg/dL (just above high threshold)",
+      "hex": "31000b000000b0270000fb0006140000",
+      "expected": {
+        "status": 0,
+        "sequence": 11,
+        "timestamp": 10160,
+        "glucoseValue": 251,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 251.0,
+        "trend": 20,
+        "isValid": true
+      },
+      "glucose_category": "urgent_high"
+    },
+    {
+      "id": "urgent_high_400",
+      "description": "Urgent high 400 mg/dL (near maximum valid glucose)",
+      "hex": "31000c000000c02700009001061e0000",
+      "expected": {
+        "status": 0,
+        "sequence": 12,
+        "timestamp": 10176,
+        "glucoseValue": 400,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 400.0,
+        "trend": 30,
+        "isValid": true
+      },
+      "glucose_category": "urgent_high"
+    },
+    {
+      "id": "invalid_zero",
+      "description": "Invalid reading - glucose value is 0",
+      "hex": "31000d000000d0270000000006000000",
+      "expected": {
+        "status": 0,
+        "sequence": 13,
+        "timestamp": 10192,
+        "glucoseValue": 0,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 0.0,
+        "trend": 0,
+        "isValid": false
+      },
+      "glucose_category": "invalid"
+    },
+    {
+      "id": "invalid_over_500",
+      "description": "Invalid reading - glucose value exceeds 500",
+      "hex": "31000e000000e0270000f501060a0000",
+      "expected": {
+        "status": 0,
+        "sequence": 14,
+        "timestamp": 10208,
+        "glucoseValue": 501,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 501.0,
+        "trend": 10,
+        "isValid": false
+      },
+      "glucose_category": "invalid"
+    },
+    {
+      "id": "rising_fast",
+      "description": "Rapid rise trend +45 (double arrow up)",
+      "hex": "31000f000000f02700009600062d0000",
+      "expected": {
+        "status": 0,
+        "sequence": 15,
+        "timestamp": 10224,
+        "glucoseValue": 150,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 150.0,
+        "trend": 45,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "falling_fast",
+      "description": "Rapid fall trend -45 (double arrow down)",
+      "hex": "31001000000000280000960006d30000",
+      "expected": {
+        "status": 0,
+        "sequence": 16,
+        "timestamp": 10240,
+        "glucoseValue": 150,
+        "glucoseIsDisplayOnly": false,
+        "state": 6,
+        "glucose": 150.0,
+        "trend": -45,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    },
+    {
+      "id": "display_only",
+      "description": "Display-only reading (displayOnly flag set)",
+      "hex": "31001100000010280000641006000000",
+      "expected": {
+        "status": 0,
+        "sequence": 17,
+        "timestamp": 10256,
+        "glucoseValue": 100,
+        "glucoseIsDisplayOnly": true,
+        "state": 6,
+        "glucose": 100.0,
+        "trend": 0,
+        "isValid": true
+      },
+      "glucose_category": "in_range"
+    }
+  ],
+  "glucose_categories": {
+    "urgent_low": "< 54 mg/dL",
+    "low": "54-69 mg/dL",
+    "in_range": "70-180 mg/dL",
+    "high": "181-250 mg/dL",
+    "urgent_high": "> 250 mg/dL",
+    "invalid": "0 or >= 500 mg/dL"
+  },
+  "cgmblekit_reference_vectors": {
+    "_note": "Raw CGMBLEKit test vectors for validation",
+    "vectors": [
+      {
+        "id": "cgmblekit_normal_high",
+        "hex": "3100680a00008a715700cc0006ffc42a",
+        "glucose": 204,
+        "trend": -1
+      },
+      {
+        "id": "cgmblekit_negative_trend",
+        "hex": "31006f0a0000be7957007a0006e4818d",
+        "glucose": 122,
+        "trend": -28
+      },
+      {
+        "id": "cgmblekit_display_only",
+        "hex": "3100700a0000f17a5700584006e3cee9",
+        "glucose": 88,
+        "displayOnly": true
+      },
+      {
+        "id": "cgmblekit_old_transmitter",
+        "hex": "3100aa00000095a078008b00060a8b34",
+        "glucose": 139,
+        "trend": 10
+      },
+      {
+        "id": "cgmblekit_zero_sequence",
+        "hex": "3100000000008eb14d00820006f6a038",
+        "glucose": 130,
+        "trend": -10
+      }
+    ]
+  }
+}

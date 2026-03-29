@@ -1,0 +1,261 @@
+{
+  "test_name": "x2_status_parsing",
+  "description": "X2-SYNTH-008: Test vectors for Tandem t:slim X2 status response parsing",
+  "reference": "pumpX2/messages/src/main/java/com/jwoglom/pumpx2/pump/messages/response/currentStatus/",
+  "protocol": {
+    "message_format": {
+      "description": "Tandem X2 BLE message structure",
+      "packet_format": "[sequence:1][txId:1][opcode:1][packetCount:1][cargo...][crc16:2]",
+      "byte_order": "little-endian",
+      "characteristic": "7B83FFF6-9F77-4E5C-8064-AAE2C24838B9 (currentStatus)"
+    },
+    "status_messages": {
+      "InsulinStatus": { "request_opcode": 36, "response_opcode": 37, "size": 4 },
+      "CurrentBatteryV1": { "request_opcode": 52, "response_opcode": 53, "size": 2 },
+      "CGMStatus": { "request_opcode": 80, "response_opcode": 81, "size": 10 },
+      "CurrentBasalStatus": { "request_opcode": 40, "response_opcode": 41, "size": 9 },
+      "CurrentBolusStatus": { "request_opcode": 44, "response_opcode": 45, "size": 15 },
+      "ControlIQIOB": { "request_opcode": 108, "response_opcode": 109, "size": 17 }
+    }
+  },
+  "vectors": {
+    "insulin_status": [
+      {
+        "name": "InsulinStatus empty reservoir",
+        "source": "InsulinStatusResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "000425040400000023397d",
+        "cargo_hex": "00000023",
+        "expected": {
+          "opcode": 37,
+          "size": 4,
+          "currentInsulinAmount": 0,
+          "isEstimate": 0,
+          "insulinLowAmount": 35
+        },
+        "field_layout": [
+          { "name": "currentInsulinAmount", "offset": 0, "size": 2, "type": "uint16_le" },
+          { "name": "isEstimate", "offset": 2, "size": 1, "type": "uint8" },
+          { "name": "insulinLowAmount", "offset": 3, "size": 1, "type": "uint8" }
+        ],
+        "notes": "Empty reservoir, not estimate, low threshold 35 units"
+      },
+      {
+        "name": "InsulinStatus 200 units",
+        "source": "TandemX2ConformanceTests.swift",
+        "operation": "decode",
+        "cargo_hex": "c8000014",
+        "expected": {
+          "currentInsulinAmount": 200,
+          "isEstimate": 0,
+          "insulinLowAmount": 20
+        },
+        "notes": "200 units remaining, not estimate, low threshold 20 units"
+      }
+    ],
+    "current_battery_v1": [
+      {
+        "name": "CurrentBatteryV1 99/100",
+        "source": "CurrentBatteryV1ResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "0003350302636452b9",
+        "cargo_hex": "6364",
+        "expected": {
+          "opcode": 53,
+          "size": 2,
+          "currentBatteryAbc": 99,
+          "currentBatteryIbc": 100
+        },
+        "field_layout": [
+          { "name": "currentBatteryAbc", "offset": 0, "size": 1, "type": "uint8" },
+          { "name": "currentBatteryIbc", "offset": 1, "size": 1, "type": "uint8" }
+        ],
+        "notes": "ABC=99%, IBC=100% battery levels"
+      },
+      {
+        "name": "CurrentBatteryV1 100/100",
+        "source": "CurrentBatteryV1ResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "00043504026464e871",
+        "cargo_hex": "6464",
+        "expected": {
+          "currentBatteryAbc": 100,
+          "currentBatteryIbc": 100
+        },
+        "notes": "Full battery 100%/100%"
+      }
+    ],
+    "cgm_status": [
+      {
+        "name": "CGMStatus session stopped",
+        "source": "CGMStatusResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "000351030a00000000000000000000a926",
+        "cargo_hex": "00000000000000000000",
+        "expected": {
+          "opcode": 81,
+          "size": 10,
+          "sessionStateId": 0,
+          "sessionState": "SESSION_STOPPED",
+          "lastCalibrationTimestamp": 0,
+          "sensorStartedTimestamp": 0,
+          "transmitterBatteryStatusId": 0,
+          "transmitterBatteryStatus": "UNAVAILABLE"
+        },
+        "field_layout": [
+          { "name": "sessionStateId", "offset": 0, "size": 1, "type": "uint8" },
+          { "name": "lastCalibrationTimestamp", "offset": 1, "size": 4, "type": "uint32_le" },
+          { "name": "sensorStartedTimestamp", "offset": 5, "size": 4, "type": "uint32_le" },
+          { "name": "transmitterBatteryStatusId", "offset": 9, "size": 1, "type": "uint8" }
+        ],
+        "enums": {
+          "sessionState": {
+            "0": "SESSION_STOPPED",
+            "1": "SESSION_START_PENDING",
+            "2": "SESSION_ACTIVE",
+            "3": "SESSION_STOP_PENDING"
+          },
+          "transmitterBatteryStatus": {
+            "0": "UNAVAILABLE",
+            "1": "ERROR",
+            "2": "EXPIRED",
+            "3": "OK",
+            "4": "OUT_OF_RANGE"
+          }
+        },
+        "notes": "No active CGM session, transmitter unavailable"
+      }
+    ],
+    "current_basal_status": [
+      {
+        "name": "CurrentBasalStatus 0.8 U/hr profile",
+        "source": "CurrentBasalStatusResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "0003290309200300000000000001d8d0",
+        "cargo_hex": "200300000000000001",
+        "expected": {
+          "opcode": 41,
+          "size": 9,
+          "profileBasalRate": 800,
+          "currentBasalRate": 0,
+          "basalModifiedBitmask": 1
+        },
+        "field_layout": [
+          { "name": "profileBasalRate", "offset": 0, "size": 4, "type": "uint32_le", "unit": "milliunits/hr" },
+          { "name": "currentBasalRate", "offset": 4, "size": 4, "type": "uint32_le", "unit": "milliunits/hr" },
+          { "name": "basalModifiedBitmask", "offset": 8, "size": 1, "type": "uint8" }
+        ],
+        "notes": "Profile rate 0.8 U/hr (800 milliunits), current 0 (suspended?), modified flag set"
+      }
+    ],
+    "current_bolus_status": [
+      {
+        "name": "CurrentBolusStatus empty/invalid",
+        "source": "CurrentBolusStatusResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "00032d030f000000000000000000000000000000b109",
+        "cargo_hex": "000000000000000000000000000000",
+        "expected": {
+          "opcode": 45,
+          "size": 15,
+          "statusId": 0,
+          "status": "ALREADY_DELIVERED_OR_INVALID",
+          "bolusId": 0,
+          "timestamp": 0,
+          "requestedVolume": 0,
+          "bolusSourceId": 0,
+          "bolusTypeBitmask": 0
+        },
+        "field_layout": [
+          { "name": "statusId", "offset": 0, "size": 1, "type": "uint8" },
+          { "name": "bolusId", "offset": 1, "size": 2, "type": "uint16_le" },
+          { "name": "reserved", "offset": 3, "size": 2, "type": "reserved" },
+          { "name": "timestamp", "offset": 5, "size": 4, "type": "uint32_le", "epoch": "2008-01-01" },
+          { "name": "requestedVolume", "offset": 9, "size": 4, "type": "uint32_le", "unit": "milliunits" },
+          { "name": "bolusSourceId", "offset": 13, "size": 1, "type": "uint8" },
+          { "name": "bolusTypeBitmask", "offset": 14, "size": 1, "type": "uint8" }
+        ],
+        "enums": {
+          "status": {
+            "0": "ALREADY_DELIVERED_OR_INVALID",
+            "1": "DELIVERING",
+            "2": "REQUESTING"
+          }
+        },
+        "notes": "No active bolus"
+      }
+    ],
+    "control_iq_iob": [
+      {
+        "name": "ControlIQIOB no insulin on board",
+        "source": "ControlIQIOBResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "00036d031100000000000000000000000000000000015aa3",
+        "cargo_hex": "0000000000000000000000000000000001",
+        "expected": {
+          "opcode": 109,
+          "size": 17,
+          "mudaliarIOB": 0,
+          "timeRemainingSeconds": 0,
+          "mudaliarTotalIOB": 0,
+          "swan6hrIOB": 0,
+          "iobTypeInt": 1,
+          "iobType": "SWAN_6HR"
+        },
+        "field_layout": [
+          { "name": "mudaliarIOB", "offset": 0, "size": 4, "type": "uint32_le", "unit": "milliunits" },
+          { "name": "timeRemainingSeconds", "offset": 4, "size": 4, "type": "uint32_le" },
+          { "name": "mudaliarTotalIOB", "offset": 8, "size": 4, "type": "uint32_le", "unit": "milliunits" },
+          { "name": "swan6hrIOB", "offset": 12, "size": 4, "type": "uint32_le", "unit": "milliunits" },
+          { "name": "iobTypeInt", "offset": 16, "size": 1, "type": "uint8" }
+        ],
+        "enums": {
+          "iobType": {
+            "0": "MUDALIAR",
+            "1": "SWAN_6HR"
+          }
+        },
+        "notes": "No active IOB, using SWAN 6-hour model"
+      },
+      {
+        "name": "ControlIQIOB with insulin - CIQ off",
+        "source": "ControlIQIOBResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "00056d0511c00000007c380000f1000000a100000000ab8d",
+        "cargo_hex": "c00000007c380000f1000000a100000000",
+        "expected": {
+          "mudaliarIOB": 192,
+          "timeRemainingSeconds": 14460,
+          "mudaliarTotalIOB": 241,
+          "swan6hrIOB": 161,
+          "iobTypeInt": 0,
+          "iobType": "MUDALIAR"
+        },
+        "notes": "Control-IQ off, using Mudaliar model. Displayed IOB = mudaliarIOB = 0.192 U"
+      },
+      {
+        "name": "ControlIQIOB with insulin - CIQ on",
+        "source": "ControlIQIOBResponseTest.java",
+        "operation": "decode",
+        "packet_hex": "00066d0611b80000008c370000f10000009a00000001c315",
+        "cargo_hex": "b80000008c370000f10000009a00000001",
+        "expected": {
+          "mudaliarIOB": 184,
+          "timeRemainingSeconds": 14220,
+          "mudaliarTotalIOB": 241,
+          "swan6hrIOB": 154,
+          "iobTypeInt": 1,
+          "iobType": "SWAN_6HR"
+        },
+        "notes": "Control-IQ on, using SWAN 6-hour model. Displayed IOB = swan6hrIOB = 0.154 U"
+      }
+    ]
+  },
+  "metadata": {
+    "extracted_from": "pumpX2 (jwoglom/pumpX2)",
+    "extraction_date": "2026-02-13",
+    "trace_id": "X2-SYNTH-008",
+    "total_vectors": 10,
+    "message_types": 6
+  }
+}

@@ -1,0 +1,4 @@
+module CECShim {
+    header "CECShim.h"
+    export *
+}

@@ -1,0 +1,3 @@
+# Large syslog captures - too big for git
+*.log
+*e2e*.txt

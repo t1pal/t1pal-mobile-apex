@@ -1,0 +1,135 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T08:33:00Z",
+    "source": "Protocol documentation synthesis",
+    "type": "bolus-command-fixture",
+    "pump": {
+      "model": "Medtronic 515",
+      "serial": "208850"
+    },
+    "WARNING": "BOLUS COMMANDS ARE DANGEROUS - DO NOT USE ON REAL PUMP WITHOUT VERIFICATION",
+    "notes": "Bolus command/response pairs for conformance testing ONLY"
+  },
+  "strokeCalculation": {
+    "olderPumps": {
+      "models": ["508", "511", "512", "515", "522"],
+      "formula": "strokes = units * 10",
+      "resolution": "0.1 U"
+    },
+    "newerPumps": {
+      "models": ["523", "554", "723", "754"],
+      "formula": "strokes = units * 40",
+      "resolution": "0.025 U"
+    }
+  },
+  "testCases": [
+    {
+      "name": "bolus_1.0U_model515",
+      "description": "1.0 unit bolus on older pump (10 strokes/unit)",
+      "pumpModel": "515",
+      "input": {
+        "units": 1.0
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 10,
+        "strokesHex": "0x0A",
+        "rawCommand": "A742032F520A",
+        "notes": "Model 515 uses 10 strokes/unit"
+      }
+    },
+    {
+      "name": "bolus_0.5U_model515",
+      "description": "0.5 unit bolus on older pump",
+      "pumpModel": "515",
+      "input": {
+        "units": 0.5
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 5,
+        "strokesHex": "0x05",
+        "rawCommand": "A742032F5205"
+      }
+    },
+    {
+      "name": "bolus_2.5U_model515",
+      "description": "2.5 unit bolus on older pump",
+      "pumpModel": "515",
+      "input": {
+        "units": 2.5
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 25,
+        "strokesHex": "0x19",
+        "rawCommand": "A742032F5219"
+      }
+    },
+    {
+      "name": "bolus_1.0U_model723",
+      "description": "1.0 unit bolus on newer pump (40 strokes/unit)",
+      "pumpModel": "723",
+      "input": {
+        "units": 1.0
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 40,
+        "strokesHex": "0x28",
+        "rawCommand": "A742032F5228",
+        "notes": "Model 723 uses 40 strokes/unit"
+      }
+    },
+    {
+      "name": "bolus_0.5U_model723",
+      "description": "0.5 unit bolus on newer pump",
+      "pumpModel": "723",
+      "input": {
+        "units": 0.5
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 20,
+        "strokesHex": "0x14",
+        "rawCommand": "A742032F5214"
+      }
+    },
+    {
+      "name": "bolus_0.025U_model723",
+      "description": "Minimum bolus on newer pump",
+      "pumpModel": "723",
+      "input": {
+        "units": 0.025
+      },
+      "expected": {
+        "opcode": "0x42",
+        "strokes": 1,
+        "strokesHex": "0x01",
+        "rawCommand": "A742032F5201",
+        "notes": "Minimum deliverable unit = 1 stroke = 0.025U"
+      }
+    }
+  ],
+  "responseFormat": {
+    "ack": {
+      "description": "Pump acknowledges bolus command and begins delivery",
+      "format": "A7 06 [serial] [opcode] 00",
+      "example": "A706032F524200"
+    },
+    "nak_suspended": {
+      "description": "Pump is suspended, cannot bolus",
+      "format": "A7 06 [serial] [opcode] 05"
+    },
+    "nak_maxBolus": {
+      "description": "Bolus exceeds max bolus setting",
+      "format": "A7 06 [serial] [opcode] 03"
+    }
+  },
+  "safetyNotes": [
+    "Always verify pump model before calculating strokes",
+    "Always verify max bolus setting",
+    "Never send bolus commands to a pump with insulin attached during testing",
+    "Use simulation mode for conformance testing"
+  ]
+}

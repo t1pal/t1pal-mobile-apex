@@ -1,0 +1,544 @@
+{
+  "_source": "NightscoutKit HTTP Fault Handling (T1Pal)",
+  "_task": "BATCH-NS-FAULT-A, BATCH-NS-FAULT-B",
+  "_description": "HTTP and connection error handling test vectors for network resilience",
+  "_format": {
+    "scenarios": "Each scenario defines a fault injection sequence with expected behavior",
+    "protocol": "HTTP/1.1 REST API (Nightscout v1) + WebSocket",
+    "trace": "NS-FAULT-001, NS-FAULT-002, NS-FAULT-003, NS-FAULT-004, NS-FAULT-005, NS-FAULT-006, NS-FAULT-007"
+  },
+  "test_vectors": [
+    {
+      "id": "timeout_mid_upload",
+      "trace": "NS-FAULT-001",
+      "description": "Network timeout during partial POST upload",
+      "scenario": "Connection drops after sending request body but before receiving response",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body": [
+            {"sgv": 120, "date": 1707840000000, "direction": "Flat", "type": "sgv"},
+            {"sgv": 118, "date": 1707840300000, "direction": "Flat", "type": "sgv"},
+            {"sgv": 115, "date": 1707840600000, "direction": "Flat", "type": "sgv"}
+          ],
+          "headers": {
+            "Content-Type": "application/json",
+            "api-secret": "sha1-hash-placeholder"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "fault",
+          "type": "timeout",
+          "trigger": "after_request_sent",
+          "timeout_ms": 30000,
+          "description": "Server does not respond within timeout"
+        }
+      ],
+      "expected_behavior": {
+        "error_type": "NetworkSimulatedError.timeout",
+        "should_queue_for_retry": true,
+        "entries_in_offline_queue": 3,
+        "retry_eligible": true
+      },
+      "recovery_sequence": [
+        {
+          "step": 1,
+          "action": "retry_from_queue",
+          "delay_ms": 5000,
+          "description": "Retry after exponential backoff"
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body_count": 3,
+          "description": "Re-send queued entries"
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "status": 200,
+          "body": {"ok": true, "inserted": 3}
+        }
+      ]
+    },
+    {
+      "id": "rate_limit_429",
+      "trace": "NS-FAULT-002",
+      "description": "Server returns 429 Too Many Requests with Retry-After header",
+      "scenario": "Client exceeds rate limit, server responds with backoff requirement",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body": [
+            {"sgv": 125, "date": 1707841000000, "direction": "Flat", "type": "sgv"}
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 429,
+          "headers": {
+            "Retry-After": "30",
+            "X-RateLimit-Limit": "60",
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1707841060"
+          },
+          "body": {
+            "status": 429,
+            "message": "Rate limit exceeded. Please wait before retrying.",
+            "retryAfter": 30
+          }
+        }
+      ],
+      "expected_behavior": {
+        "error_type": "NightscoutError.httpError",
+        "status_code": 429,
+        "should_parse_retry_after": true,
+        "backoff_seconds": 30,
+        "should_queue_for_retry": true,
+        "respect_retry_after": true
+      },
+      "recovery_sequence": [
+        {
+          "step": 1,
+          "action": "wait_retry_after",
+          "delay_ms": 30000,
+          "description": "Honor Retry-After header"
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body_count": 1
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "status": 200,
+          "headers": {
+            "X-RateLimit-Remaining": "59"
+          },
+          "body": {"ok": true, "inserted": 1}
+        }
+      ]
+    },
+    {
+      "id": "auth_token_expiry_401",
+      "trace": "NS-FAULT-005",
+      "description": "Auth token expires mid-session, requires re-authentication",
+      "scenario": "JWT token expires during active session, server returns 401",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries.json",
+          "query": "count=10",
+          "headers": {
+            "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJuaWdodHNjb3V0IiwiZXhwIjoxNzA3ODQwMDAwfQ.expired"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 401,
+          "body": {
+            "status": 401,
+            "message": "Token has expired",
+            "code": "TOKEN_EXPIRED"
+          }
+        },
+        {
+          "step": 3,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/authorize/token",
+          "body": {
+            "grant_type": "refresh_token",
+            "refresh_token": "refresh-token-placeholder"
+          },
+          "description": "Automatic token refresh"
+        },
+        {
+          "step": 4,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJuaWdodHNjb3V0IiwiZXhwIjoxNzA3OTI2NDAwfQ.newtoken",
+            "expiresIn": 86400,
+            "tokenType": "Bearer"
+          }
+        },
+        {
+          "step": 5,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries.json",
+          "query": "count=10",
+          "headers": {
+            "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJuaWdodHNjb3V0IiwiZXhwIjoxNzA3OTI2NDAwfQ.newtoken"
+          },
+          "description": "Retry original request with new token"
+        },
+        {
+          "step": 6,
+          "direction": "rx",
+          "status": 200,
+          "body": [
+            {"sgv": 110, "date": 1707840000000, "direction": "Flat", "type": "sgv"}
+          ]
+        }
+      ],
+      "expected_behavior": {
+        "initial_error_type": "NightscoutError.unauthorized",
+        "auto_refresh_triggered": true,
+        "retry_with_new_token": true,
+        "user_intervention_required": false,
+        "final_result": "success"
+      }
+    },
+    {
+      "id": "malformed_json_response",
+      "trace": "NS-FAULT-006",
+      "description": "Server returns malformed JSON that cannot be parsed",
+      "scenario": "Server error causes truncated or invalid JSON response",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/entries.json",
+          "query": "count=10"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "raw_body": "[{\"sgv\":120,\"date\":1707840000000},{\"sgv\":118,\"dat",
+          "body_note": "Truncated JSON - connection dropped mid-transfer"
+        }
+      ],
+      "expected_behavior": {
+        "error_type": "NightscoutError.decodingError",
+        "should_not_crash": true,
+        "should_log_raw_response": true,
+        "recoverable": true,
+        "user_message": "Server returned invalid data. Please try again."
+      },
+      "malformed_variants": [
+        {
+          "id": "truncated_array",
+          "raw": "[{\"sgv\":120},{\"sgv\":118",
+          "error": "Unexpected end of JSON"
+        },
+        {
+          "id": "invalid_unicode",
+          "raw": "[{\"sgv\":120,\"device\":\"\\uXXXX\"}]",
+          "error": "Invalid Unicode escape"
+        },
+        {
+          "id": "wrong_type",
+          "raw": "{\"entries\": \"not an array\"}",
+          "error": "Expected array, got string"
+        },
+        {
+          "id": "html_error_page",
+          "raw": "<!DOCTYPE html><html><body><h1>502 Bad Gateway</h1></body></html>",
+          "error": "Expected JSON, got HTML"
+        },
+        {
+          "id": "empty_response",
+          "raw": "",
+          "error": "Empty response body"
+        }
+      ]
+    },
+    {
+      "id": "websocket_disconnect_mid_sync",
+      "trace": "NS-FAULT-003",
+      "description": "WebSocket connection drops during active sync, requires reconnect and resume",
+      "scenario": "Real-time sync is active, connection lost, reconnect with state preservation",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "type": "websocket_connect",
+          "url": "wss://nightscout.example.com/socket.io/?transport=websocket"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "type": "websocket_open",
+          "message": {"type": "connect", "sid": "abc123"}
+        },
+        {
+          "step": 3,
+          "direction": "tx",
+          "type": "websocket_subscribe",
+          "message": {"type": "subscribe", "channels": ["entries", "treatments"]}
+        },
+        {
+          "step": 4,
+          "direction": "rx",
+          "type": "websocket_event",
+          "message": {"type": "entry", "sgv": 120, "date": 1707840000000}
+        },
+        {
+          "step": 5,
+          "direction": "fault",
+          "type": "connection_dropped",
+          "trigger": "mid_sync",
+          "description": "Network connection lost unexpectedly"
+        }
+      ],
+      "expected_behavior": {
+        "error_type": "NetworkSimulatedError.connectionDropped",
+        "should_buffer_events": true,
+        "should_auto_reconnect": true,
+        "reconnect_delay_ms": 1000,
+        "max_reconnect_attempts": 5,
+        "should_resume_subscriptions": true
+      },
+      "recovery_sequence": [
+        {
+          "step": 1,
+          "action": "reconnect",
+          "delay_ms": 1000,
+          "description": "Exponential backoff before reconnect"
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "type": "websocket_connect",
+          "url": "wss://nightscout.example.com/socket.io/?transport=websocket"
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "type": "websocket_open",
+          "message": {"type": "connect", "sid": "def456"}
+        },
+        {
+          "step": 4,
+          "direction": "tx",
+          "type": "websocket_subscribe",
+          "message": {"type": "subscribe", "channels": ["entries", "treatments"]},
+          "description": "Re-subscribe to channels after reconnect"
+        },
+        {
+          "step": 5,
+          "direction": "rx",
+          "type": "websocket_event",
+          "message": {"type": "ack", "channels": ["entries", "treatments"]}
+        }
+      ]
+    },
+    {
+      "id": "partial_batch_upload_failure",
+      "trace": "NS-FAULT-004",
+      "description": "Batch upload partially fails - 3 of 5 entries succeed, 2 fail",
+      "scenario": "Server accepts some entries but rejects others due to validation or conflicts",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body": [
+            {"sgv": 120, "date": 1707840000000, "direction": "Flat", "type": "sgv"},
+            {"sgv": 118, "date": 1707840300000, "direction": "Flat", "type": "sgv"},
+            {"sgv": -5, "date": 1707840600000, "direction": "Flat", "type": "sgv"},
+            {"sgv": 115, "date": 1707840900000, "direction": "Flat", "type": "sgv"},
+            {"sgv": 9999, "date": 1707841200000, "direction": "Flat", "type": "sgv"}
+          ],
+          "note": "Entry 3 (sgv=-5) and Entry 5 (sgv=9999) are invalid"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 207,
+          "body": {
+            "ok": false,
+            "inserted": 3,
+            "failed": 2,
+            "results": [
+              {"index": 0, "status": "ok", "_id": "entry1"},
+              {"index": 1, "status": "ok", "_id": "entry2"},
+              {"index": 2, "status": "error", "error": "sgv value out of range (negative)"},
+              {"index": 3, "status": "ok", "_id": "entry4"},
+              {"index": 4, "status": "error", "error": "sgv value out of range (>600)"}
+            ]
+          }
+        }
+      ],
+      "expected_behavior": {
+        "partial_success": true,
+        "successful_count": 3,
+        "failed_count": 2,
+        "should_remove_successful_from_queue": true,
+        "should_mark_failed_for_review": true,
+        "retry_failed_items": false,
+        "user_notification": "3 entries uploaded, 2 failed validation"
+      },
+      "reconciliation": {
+        "strategy": "per_item",
+        "description": "Process each item result individually",
+        "successful_items_removed": [0, 1, 3],
+        "failed_items_flagged": [2, 4],
+        "failed_items_action": "log_and_discard"
+      }
+    },
+    {
+      "id": "dns_resolution_failure",
+      "trace": "NS-FAULT-007",
+      "description": "DNS resolution fails, triggering offline queue activation",
+      "scenario": "Device cannot resolve server hostname, all requests queued for retry",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body": [
+            {"sgv": 125, "date": 1707842000000, "direction": "Flat", "type": "sgv"}
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "fault",
+          "type": "dns_failure",
+          "trigger": "before_connect",
+          "error_code": "EAI_NONAME",
+          "description": "Host not found - DNS resolution failed"
+        }
+      ],
+      "expected_behavior": {
+        "error_type": "NetworkSimulatedError.dnsFailure",
+        "should_activate_offline_mode": true,
+        "should_queue_for_retry": true,
+        "entries_in_offline_queue": 1,
+        "network_state": "offline",
+        "should_start_network_monitor": true
+      },
+      "recovery_sequence": [
+        {
+          "step": 1,
+          "action": "network_monitor_detects_connectivity",
+          "description": "System detects network is available again"
+        },
+        {
+          "step": 2,
+          "action": "drain_offline_queue",
+          "description": "Process all queued items"
+        },
+        {
+          "step": 3,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/entries",
+          "body_count": 1
+        },
+        {
+          "step": 4,
+          "direction": "rx",
+          "status": 200,
+          "body": {"ok": true, "inserted": 1}
+        },
+        {
+          "step": 5,
+          "action": "update_network_state",
+          "network_state": "online"
+        }
+      ],
+      "dns_failure_variants": [
+        {
+          "id": "temporary_failure",
+          "error_code": "EAI_AGAIN",
+          "retry_eligible": true,
+          "description": "Temporary DNS failure - retry immediately"
+        },
+        {
+          "id": "no_recovery",
+          "error_code": "EAI_FAIL",
+          "retry_eligible": false,
+          "description": "Non-recoverable DNS failure"
+        },
+        {
+          "id": "no_data",
+          "error_code": "EAI_NODATA",
+          "retry_eligible": true,
+          "description": "Valid hostname but no address records"
+        }
+      ]
+    }
+  ],
+  "error_code_reference": {
+    "400": {
+      "name": "Bad Request",
+      "retry_eligible": false,
+      "action": "Fix request parameters"
+    },
+    "401": {
+      "name": "Unauthorized",
+      "retry_eligible": true,
+      "action": "Refresh token or re-authenticate"
+    },
+    "403": {
+      "name": "Forbidden",
+      "retry_eligible": false,
+      "action": "Check permissions"
+    },
+    "404": {
+      "name": "Not Found",
+      "retry_eligible": false,
+      "action": "Verify endpoint URL"
+    },
+    "429": {
+      "name": "Too Many Requests",
+      "retry_eligible": true,
+      "action": "Honor Retry-After header"
+    },
+    "500": {
+      "name": "Internal Server Error",
+      "retry_eligible": true,
+      "action": "Retry with exponential backoff"
+    },
+    "502": {
+      "name": "Bad Gateway",
+      "retry_eligible": true,
+      "action": "Retry with exponential backoff"
+    },
+    "503": {
+      "name": "Service Unavailable",
+      "retry_eligible": true,
+      "action": "Retry with exponential backoff"
+    },
+    "504": {
+      "name": "Gateway Timeout",
+      "retry_eligible": true,
+      "action": "Retry with exponential backoff"
+    }
+  },
+  "backoff_strategy": {
+    "type": "exponential",
+    "initial_delay_ms": 1000,
+    "max_delay_ms": 60000,
+    "factor": 2.0,
+    "jitter": true,
+    "max_retries": 5,
+    "formula": "min(initial * 2^attempt + random_jitter, max_delay)"
+  }
+}

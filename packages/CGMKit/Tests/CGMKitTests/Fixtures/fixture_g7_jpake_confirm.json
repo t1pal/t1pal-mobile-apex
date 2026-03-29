@@ -1,0 +1,250 @@
+{
+  "session_id": "SESSION-G7-001d",
+  "session_name": "Dexcom G7 J-PAKE Key Confirmation Vectors",
+  "description": "Test vectors for J-PAKE key confirmation phase: shared key derivation and mutual authentication. After Round 2, both parties compute the same shared key and exchange confirmation hashes to prove they derived the same value.",
+  "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+  "references": [
+    "docs/research/JPAKE-REFERENCE-ANALYSIS.md",
+    "docs/research/XDRIP-G7-JPAKE-REFERENCE.md",
+    "externals/xDrip/libkeks/src/main/java/jamorham/keks/Calc.java"
+  ],
+  "timestamp": "2026-02-13T11:26:00Z",
+  "schema_version": "1.0.0",
+
+  "protocol_overview": {
+    "name": "J-PAKE Key Confirmation (RFC 8236)",
+    "curve": "P-256 (secp256r1)",
+    "purpose": "Verify both parties derived the same shared key without revealing it",
+    "prerequisite": "Round 2 complete - both parties have A and B values"
+  },
+
+  "key_confirmation_format": {
+    "description": "Key confirmation exchanges confirmation hashes to prove shared key derivation",
+    "opcode": "0x04",
+    "opcode_name": "AuthConfirm",
+    "direction": "bidirectional",
+    "initiator_message": {
+      "format": "[opcode:1] + [confirmHash:16]",
+      "total_length": 17,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x04" },
+        "confirmHash": { "offset": 1, "length": 16, "description": "Confirmation hash proving shared key knowledge" }
+      }
+    },
+    "responder_message": {
+      "format": "[opcode:1] + [confirmHash:16]",
+      "total_length": 17,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x04" },
+        "confirmHash": { "offset": 1, "length": 16, "description": "Sensor's confirmation hash" }
+      }
+    }
+  },
+
+  "shared_key_derivation": {
+    "description": "Shared key computation after Round 2 (per xDrip implementation)",
+    "formula": "K = SHA256((B - g^(x4*x2*s))^x2).X[0:16]",
+    "steps": [
+      {
+        "step": 1,
+        "description": "Compute exponent: x2s = x2 * s mod n",
+        "formula": "x2s = x2 * s mod curve_order"
+      },
+      {
+        "step": 2,
+        "description": "Compute subtraction point: subtract = g^x4 * x2s (point multiplication)",
+        "formula": "subtract_point = g^(x4 * x2 * s)"
+      },
+      {
+        "step": 3,
+        "description": "Compute shared point: K_point = (B - subtract_point)^x2",
+        "formula": "K_point = (B - g^(x4*x2*s))^x2"
+      },
+      {
+        "step": 4,
+        "description": "Extract X coordinate and hash",
+        "formula": "K_full = SHA256(K_point.X)"
+      },
+      {
+        "step": 5,
+        "description": "Truncate to 16 bytes for session key",
+        "formula": "session_key = K_full[0:16]"
+      }
+    ],
+    "security_note": "Both parties compute the same K because: K_client = K_sensor (J-PAKE correctness property)"
+  },
+
+  "confirmation_hash_computation": {
+    "description": "Confirmation hash proves knowledge of shared key without revealing it",
+    "xdrip_variant": {
+      "name": "AES-based challenge response",
+      "steps": [
+        { "step": 1, "description": "Receive 8-byte challenge from sensor" },
+        { "step": 2, "description": "Double the challenge: input = challenge || challenge (16 bytes)" },
+        { "step": 3, "description": "AES-128 encrypt with session key: output = AES(session_key, input)" },
+        { "step": 4, "description": "Truncate to 8 bytes: confirmHash = output[0:8]" }
+      ],
+      "formula": "confirmHash = AES-128-ECB(session_key, challenge || challenge)[0:8]"
+    },
+    "our_variant": {
+      "name": "Hash-based confirmation (simplified)",
+      "formula": "confirmHash = SHA256(session_key || role || 'G7-CONFIRM')[0:16]",
+      "initiator_role": "initiator",
+      "responder_role": "responder",
+      "note": "Simplified implementation - xDrip uses AES-based confirmation"
+    }
+  },
+
+  "test_vectors": [
+    {
+      "id": "JPAKE-CONFIRM-001",
+      "name": "Confirmation message structure validation",
+      "description": "Verify confirmation message has correct size and opcode",
+      "assertions": [
+        { "field": "message.data[0]", "equals": "0x04", "reason": "AuthConfirm opcode" },
+        { "field": "message.data.count", "equals": 17, "reason": "opcode(1) + confirmHash(16)" },
+        { "field": "confirmHash.count", "equals": 16, "reason": "16-byte confirmation hash" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-002",
+      "name": "Confirmation response parsing",
+      "description": "Parse sensor's confirmation response correctly",
+      "input_structure": {
+        "opcode": "0x04",
+        "confirmHash_length": 16
+      },
+      "assertions": [
+        { "condition": "response != nil", "when": "data.count >= 17" },
+        { "condition": "response == nil", "when": "data[0] != 0x04" },
+        { "condition": "response == nil", "when": "data.count < 17" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-003",
+      "name": "Session key length",
+      "description": "Derived session key is 16 bytes (AES-128 compatible)",
+      "assertions": [
+        { "field": "sessionKey.count", "equals": 16, "reason": "Truncated SHA256 for AES-128" }
+      ],
+      "note": "Some implementations use 32-byte key, truncation happens at usage"
+    },
+    {
+      "id": "JPAKE-CONFIRM-004",
+      "name": "Confirmation hash determinism",
+      "description": "Same key + role produces same confirmation hash",
+      "assertions": [
+        { "field": "hash1", "equals": "hash2", "when": "same key, same role" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-005",
+      "name": "Initiator vs responder hashes differ",
+      "description": "Different roles produce different confirmation hashes",
+      "assertions": [
+        { "field": "initiator_hash", "not_equals": "responder_hash", "reason": "Role differentiation prevents reflection attacks" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-006",
+      "name": "State transition to authenticated",
+      "description": "Successful confirmation transitions to authenticated state",
+      "states": {
+        "before": "awaitingConfirmation",
+        "after": "authenticated"
+      }
+    },
+    {
+      "id": "JPAKE-CONFIRM-007",
+      "name": "Failed confirmation stays failed",
+      "description": "Wrong confirmation hash causes authentication failure",
+      "assertions": [
+        { "condition": "throws confirmationFailed", "when": "response.confirmHash != expected" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-008",
+      "name": "Session key is non-zero",
+      "description": "Derived session key should not be all zeros",
+      "assertions": [
+        { "field": "sessionKey", "not_equals": "0x00000000000000000000000000000000" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-009",
+      "name": "Confirmation rejects wrong state",
+      "description": "Confirmation from wrong state throws error",
+      "assertions": [
+        { "condition": "throws unexpectedState", "when": "state == idle" },
+        { "condition": "throws unexpectedState", "when": "state == awaitingRound1Response" },
+        { "condition": "throws unexpectedState", "when": "state == awaitingRound2Response" }
+      ]
+    },
+    {
+      "id": "JPAKE-CONFIRM-010",
+      "name": "Confirmation hash varies with key",
+      "description": "Different session keys produce different confirmation hashes",
+      "assertions": [
+        { "field": "hash_key1", "not_equals": "hash_key2" }
+      ]
+    }
+  ],
+
+  "xdrip_compatibility": {
+    "description": "Compatibility notes with xDrip libkeks key confirmation",
+    "source": "externals/xDrip/libkeks/src/main/java/jamorham/keks/Calc.java",
+    "getSharedKey": {
+      "formula": "point1.subtract(x4.multiply(x2.multiply(s).mod(Q))).multiply(x2).normalize()",
+      "output": "SHA256(point.X) full 32 bytes"
+    },
+    "getShortSharedKey": {
+      "formula": "arrayReduce(getSharedKey(), 16)",
+      "output": "First 16 bytes of SHA256 hash"
+    },
+    "calculateHash": {
+      "input": "8-byte challenge from transmitter",
+      "process": "AES-128-ECB(key, challenge || challenge)",
+      "output": "First 8 bytes of AES output"
+    }
+  },
+
+  "wire_format_examples": [
+    {
+      "name": "Key Confirm TX (client to sensor)",
+      "opcode": "0x04",
+      "description": "Client sends confirmation hash",
+      "format": "04 [confirmHash:16]",
+      "total_bytes": 17
+    },
+    {
+      "name": "Key Confirm RX (sensor to client)",
+      "opcode": "0x04",
+      "description": "Sensor responds with its confirmation hash",
+      "format": "04 [confirmHash:16]",
+      "total_bytes": 17
+    }
+  ],
+
+  "security_properties": {
+    "mutual_authentication": true,
+    "replay_protection": "Role differentiation (initiator vs responder)",
+    "key_confirmation": "Proves both parties have same key",
+    "no_key_reveal": "Confirmation hash doesn't expose session key"
+  },
+
+  "state_machine": {
+    "valid_transitions": [
+      { "from": "awaitingRound2Response", "to": "awaitingConfirmation", "trigger": "processRound2Response()" },
+      { "from": "awaitingConfirmation", "to": "authenticated", "trigger": "processConfirmation() success" },
+      { "from": "awaitingConfirmation", "to": "failed", "trigger": "processConfirmation() mismatch" }
+    ]
+  },
+
+  "related_sessions": [
+    { "id": "SESSION-G7-001a", "name": "G7 BLE connection sequence", "status": "complete" },
+    { "id": "SESSION-G7-001b", "name": "G7 J-PAKE Round 1 vectors", "status": "complete" },
+    { "id": "SESSION-G7-001c", "name": "G7 J-PAKE Round 2 vectors", "status": "complete" },
+    { "id": "SESSION-G7-001d", "name": "G7 key confirmation vectors", "status": "current" },
+    { "id": "SESSION-G7-001e", "name": "Full J-PAKE session fixture", "status": "open" }
+  ]
+}

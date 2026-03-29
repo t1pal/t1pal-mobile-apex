@@ -1,0 +1,245 @@
+//
+//  MedtronicPlaygroundStateTests.swift
+//  PumpKitTests
+//
+//  Tests for MedtronicPlaygroundState and MedtronicPlaygroundLogic
+//  Trace: PG-TEST-002
+
+import Foundation
+import Testing
+@testable import PumpKit
+
+@Suite("Medtronic Playground State")
+struct MedtronicPlaygroundStateTests {
+    
+    // MARK: - Default State Tests
+    
+    @Test("Default state has expected initial values")
+    func defaultStateHasExpectedValues() {
+        let state = MedtronicPumpPlaygroundState()
+        
+        #expect(state.pumpSerialInput == "")
+        #expect(state.isValidSerial == false)
+        #expect(state.region == .northAmerica)
+        #expect(state.connectionState == .disconnected)
+        #expect(state.pumpInfo == nil)
+        #expect(state.pumpStatus == nil)
+        #expect(state.historyEvents.isEmpty)
+        #expect(state.eventLog.isEmpty)
+        #expect(state.errorMessage == nil)
+        #expect(state.isOperationInProgress == false)
+    }
+    
+    @Test("Demo state has valid pump info")
+    func demoStateHasValidPumpInfo() {
+        let state = MedtronicPumpPlaygroundState.demo
+        
+        #expect(state.pumpSerialInput == "123456")
+        #expect(state.isValidSerial == true)
+        #expect(state.connectionState == .connected)
+        #expect(state.pumpInfo != nil)
+        #expect(state.pumpInfo?.serial == "123456")
+        #expect(state.pumpInfo?.model == .model754)
+        #expect(state.pumpStatus != nil)
+    }
+    
+    // MARK: - Serial Validation Tests
+    
+    @Test("validateSerial accepts 6 digits")
+    func validateSerialAccepts6Digits() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.validateSerial("123456", state: &state)
+        
+        #expect(state.pumpSerialInput == "123456")
+        #expect(state.isValidSerial == true)
+    }
+    
+    @Test("validateSerial rejects short input")
+    func validateSerialRejectsShort() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.validateSerial("12345", state: &state)
+        
+        #expect(state.pumpSerialInput == "12345")
+        #expect(state.isValidSerial == false)
+    }
+    
+    @Test("validateSerial strips non-digits")
+    func validateSerialStripsNonDigits() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.validateSerial("12-34-56", state: &state)
+        
+        #expect(state.pumpSerialInput == "123456")
+        #expect(state.isValidSerial == true)
+    }
+    
+    @Test("validateSerial truncates to 6 digits for display")
+    func validateSerialTruncates() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.validateSerial("1234567890", state: &state)
+        
+        // Input is truncated for display, but validation checks original length
+        #expect(state.pumpSerialInput == "123456")
+        // 10 digits entered - not exactly 6, so invalid
+        #expect(state.isValidSerial == false)
+    }
+    
+    // MARK: - Region Tests
+    
+    @Test("setRegion updates region and logs event")
+    func setRegionUpdatesAndLogs() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.setRegion(.worldWide, state: &state)
+        
+        #expect(state.region == .worldWide)
+        #expect(state.eventLog.count == 1)
+        #expect(state.eventLog.first?.type == .rf)
+    }
+    
+    // MARK: - Wake Pump Tests
+    
+    @Test("wakePump requires valid serial")
+    func wakePumpRequiresValidSerial() {
+        var state = MedtronicPumpPlaygroundState()
+        state.pumpSerialInput = "12345" // Invalid - only 5 digits
+        state.isValidSerial = false
+        
+        MedtronicPumpPlaygroundLogic.wakePump(state: &state)
+        
+        #expect(state.errorMessage != nil)
+        #expect(state.connectionState == .disconnected)
+        #expect(state.isOperationInProgress == false)
+    }
+    
+    @Test("wakePump transitions to waking state")
+    func wakePumpTransitionsToWaking() {
+        var state = MedtronicPumpPlaygroundState()
+        MedtronicPumpPlaygroundLogic.validateSerial("123456", state: &state)
+        
+        MedtronicPumpPlaygroundLogic.wakePump(state: &state)
+        
+        #expect(state.connectionState == .waking)
+        #expect(state.isOperationInProgress == true)
+        #expect(state.errorMessage == nil)
+        #expect(state.eventLog.count >= 2) // wake + rf events
+    }
+    
+    // MARK: - Connection State Tests
+    
+    @Test("simulateConnected sets pump info")
+    func simulateConnectedSetsPumpInfo() {
+        var state = MedtronicPumpPlaygroundState()
+        MedtronicPumpPlaygroundLogic.validateSerial("208850", state: &state)
+        state.region = .northAmerica
+        
+        MedtronicPumpPlaygroundLogic.simulateConnected(state: &state)
+        
+        #expect(state.connectionState == .connected)
+        #expect(state.isOperationInProgress == false)
+        #expect(state.pumpInfo != nil)
+        #expect(state.pumpInfo?.serial == "208850")
+        #expect(state.pumpInfo?.region == .northAmerica)
+    }
+    
+    @Test("disconnect clears pump state")
+    func disconnectClearsPumpState() {
+        var state = MedtronicPumpPlaygroundState.demo
+        
+        MedtronicPumpPlaygroundLogic.disconnect(state: &state)
+        
+        #expect(state.connectionState == .disconnected)
+        #expect(state.pumpInfo == nil)
+        #expect(state.pumpStatus == nil)
+        #expect(state.historyEvents.isEmpty)
+    }
+    
+    // MARK: - Status Reading Tests
+    
+    @Test("readStatus requires connected state")
+    func readStatusRequiresConnected() {
+        var state = MedtronicPumpPlaygroundState()
+        state.connectionState = .disconnected
+        
+        MedtronicPumpPlaygroundLogic.readStatus(state: &state)
+        
+        #expect(state.pumpStatus == nil)
+    }
+    
+    @Test("readStatus populates pump status")
+    func readStatusPopulatesStatus() {
+        var state = MedtronicPumpPlaygroundState()
+        state.connectionState = .connected
+        
+        MedtronicPumpPlaygroundLogic.readStatus(state: &state)
+        
+        #expect(state.pumpStatus != nil)
+        #expect(state.pumpStatus?.reservoirLevel ?? 0 > 0)
+        #expect(state.pumpStatus?.batteryLevel ?? 0 > 0)
+    }
+    
+    // MARK: - History Tests
+    
+    @Test("readHistory populates events")
+    func readHistoryPopulatesEvents() {
+        var state = MedtronicPumpPlaygroundState()
+        state.connectionState = .connected
+        
+        MedtronicPumpPlaygroundLogic.readHistory(state: &state)
+        
+        #expect(!state.historyEvents.isEmpty)
+        #expect(state.historyEvents.count >= 3)
+    }
+    
+    // MARK: - Event Log Tests
+    
+    @Test("Event log caps at 50 entries")
+    func eventLogCapsAt50() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        for i in 0..<60 {
+            MedtronicPumpPlaygroundLogic.addEvent(
+                type: .status,
+                message: "Event \(i)",
+                state: &state
+            )
+        }
+        
+        #expect(state.eventLog.count == 50)
+    }
+    
+    @Test("New events appear at top of log")
+    func newEventsAtTop() {
+        var state = MedtronicPumpPlaygroundState()
+        
+        MedtronicPumpPlaygroundLogic.addEvent(type: .status, message: "First", state: &state)
+        MedtronicPumpPlaygroundLogic.addEvent(type: .status, message: "Second", state: &state)
+        
+        #expect(state.eventLog.first?.message == "Second")
+    }
+    
+    @Test("clearEventLog empties the log")
+    func clearEventLogEmpties() {
+        var state = MedtronicPumpPlaygroundState()
+        MedtronicPumpPlaygroundLogic.addEvent(type: .status, message: "Test", state: &state)
+        
+        MedtronicPumpPlaygroundLogic.clearEventLog(state: &state)
+        
+        #expect(state.eventLog.isEmpty)
+    }
+    
+    // MARK: - Sendable Conformance
+    
+    @Test("State is Sendable")
+    func stateIsSendable() async {
+        let state = MedtronicPumpPlaygroundState.demo
+        
+        // If this compiles, state is Sendable
+        await Task { @Sendable in
+            _ = state.pumpSerialInput
+        }.value
+    }
+}

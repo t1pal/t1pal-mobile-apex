@@ -1,0 +1,211 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T09:33:00Z",
+    "source": "Protocol documentation synthesis",
+    "type": "dexcom-g6-ble-fixture",
+    "references": [
+      "docs/architecture/G6-PROTO-001-GATT-CHARACTERISTICS.md",
+      "packages/CGMKit/Sources/CGMKit/DexcomG6/G6Constants.swift",
+      "externals/CGMBLEKit/CGMBLEKit/"
+    ],
+    "notes": "Dexcom G6 BLE protocol fixtures for conformance testing"
+  },
+  "advertisement": {
+    "serviceUUID": "0xFEBC",
+    "localName": "DexcomXX",
+    "namePattern": "Dexcom followed by last 2 chars of transmitter ID"
+  },
+  "services": {
+    "cgmService": {
+      "uuid": "F8083532-849E-531C-C594-30F1F86A4EA5",
+      "purpose": "Primary CGM data service"
+    },
+    "deviceInfo": {
+      "uuid": "0000180A-0000-1000-8000-00805F9B34FB",
+      "purpose": "Standard BLE Device Information"
+    }
+  },
+  "characteristics": {
+    "authentication": {
+      "uuid": "F8083533-849E-531C-C594-30F1F86A4EA5",
+      "properties": ["write", "notify"],
+      "purpose": "AES authentication handshake"
+    },
+    "control": {
+      "uuid": "F8083534-849E-531C-C594-30F1F86A4EA5",
+      "properties": ["write", "notify"],
+      "purpose": "Commands and responses"
+    },
+    "backfill": {
+      "uuid": "F8083535-849E-531C-C594-30F1F86A4EA5",
+      "properties": ["notify"],
+      "purpose": "Historical glucose data"
+    }
+  },
+  "opcodes": {
+    "authentication": {
+      "authRequestTx": {"code": "0x01", "description": "Send client token"},
+      "authRequestRx": {"code": "0x03", "description": "Receive server token hash + challenge"},
+      "authChallengeTx": {"code": "0x04", "description": "Send challenge hash"},
+      "authChallengeRx": {"code": "0x05", "description": "Receive auth result"},
+      "keepAliveTx": {"code": "0x06", "description": "Keep connection alive"},
+      "bondRequestTx": {"code": "0x07", "description": "Request bonding"}
+    },
+    "control": {
+      "glucoseTx": {"code": "0x30", "description": "Request current glucose"},
+      "glucoseRx": {"code": "0x31", "description": "Current glucose response"},
+      "calibrationTx": {"code": "0x32", "description": "Send calibration"},
+      "calibrationRx": {"code": "0x33", "description": "Calibration response"},
+      "sensorTimeTx": {"code": "0x2E", "description": "Request sensor time"},
+      "sensorTimeRx": {"code": "0x2F", "description": "Sensor time response"},
+      "transmitterTimeTx": {"code": "0x24", "description": "Request transmitter time"},
+      "transmitterTimeRx": {"code": "0x25", "description": "Transmitter time response"},
+      "transmitterVersionTx": {"code": "0x4A", "description": "Request firmware version"},
+      "transmitterVersionRx": {"code": "0x4B", "description": "Firmware version response"},
+      "batteryStatusTx": {"code": "0x22", "description": "Request battery status"},
+      "batteryStatusRx": {"code": "0x23", "description": "Battery status response"},
+      "disconnectTx": {"code": "0x09", "description": "Graceful disconnect"}
+    }
+  },
+  "testCases": {
+    "connection": [
+      {
+        "name": "scan_and_discover",
+        "description": "Scan for G6 transmitter by advertisement UUID",
+        "steps": [
+          {"action": "scan", "filter": "0xFEBC"},
+          {"action": "verify", "field": "localName", "pattern": "Dexcom.*"}
+        ]
+      },
+      {
+        "name": "connect_and_discover",
+        "description": "Connect and discover CGM service",
+        "steps": [
+          {"action": "connect"},
+          {"action": "discoverServices"},
+          {"action": "verify", "serviceUUID": "F8083532-849E-531C-C594-30F1F86A4EA5"}
+        ]
+      }
+    ],
+    "authentication": [
+      {
+        "name": "auth_success",
+        "description": "Successful authentication flow",
+        "transmitterId": "80AB12",
+        "steps": [
+          {"action": "subscribe", "characteristic": "authentication"},
+          {"action": "write", "characteristic": "authentication", "data": "01{token}02"},
+          {"action": "expect", "opcode": "0x03", "fields": ["tokenHash", "challenge"]},
+          {"action": "write", "characteristic": "authentication", "data": "04{challengeHash}"},
+          {"action": "expect", "opcode": "0x05", "authenticated": true}
+        ]
+      },
+      {
+        "name": "auth_failure_wrong_id",
+        "description": "Authentication fails with wrong transmitter ID",
+        "transmitterId": "WRONG1",
+        "expectedResult": {
+          "opcode": "0x05",
+          "authenticated": false,
+          "bonded": false
+        }
+      }
+    ],
+    "glucoseReading": [
+      {
+        "name": "request_current_glucose",
+        "description": "Request and parse current glucose value",
+        "steps": [
+          {"action": "write", "characteristic": "control", "data": "30"},
+          {"action": "expect", "opcode": "0x31"}
+        ],
+        "responseFormat": {
+          "opcode": {"offset": 0, "length": 1},
+          "status": {"offset": 1, "length": 1},
+          "sequence": {"offset": 2, "length": 4, "type": "uint32_le"},
+          "timestamp": {"offset": 6, "length": 4, "type": "uint32_le"},
+          "glucoseValue": {"offset": 10, "length": 2, "type": "uint16_le"},
+          "state": {"offset": 12, "length": 1},
+          "trend": {"offset": 13, "length": 1}
+        }
+      }
+    ],
+    "sensorInfo": [
+      {
+        "name": "request_sensor_time",
+        "description": "Get sensor session time",
+        "steps": [
+          {"action": "write", "characteristic": "control", "data": "2E"},
+          {"action": "expect", "opcode": "0x2F"}
+        ],
+        "responseFormat": {
+          "opcode": {"offset": 0, "length": 1},
+          "status": {"offset": 1, "length": 1},
+          "sensorAge": {"offset": 2, "length": 4, "type": "uint32_le", "unit": "seconds"}
+        }
+      },
+      {
+        "name": "request_transmitter_time",
+        "description": "Get transmitter runtime",
+        "steps": [
+          {"action": "write", "characteristic": "control", "data": "24"},
+          {"action": "expect", "opcode": "0x25"}
+        ],
+        "responseFormat": {
+          "opcode": {"offset": 0, "length": 1},
+          "status": {"offset": 1, "length": 1},
+          "currentTime": {"offset": 2, "length": 4, "type": "uint32_le"},
+          "sessionStartTime": {"offset": 6, "length": 4, "type": "uint32_le"}
+        }
+      }
+    ],
+    "batteryStatus": [
+      {
+        "name": "request_battery",
+        "description": "Get transmitter battery status",
+        "steps": [
+          {"action": "write", "characteristic": "control", "data": "22"},
+          {"action": "expect", "opcode": "0x23"}
+        ],
+        "responseFormat": {
+          "opcode": {"offset": 0, "length": 1},
+          "status": {"offset": 1, "length": 1},
+          "voltageA": {"offset": 2, "length": 2, "type": "uint16_le", "unit": "mV"},
+          "voltageB": {"offset": 4, "length": 2, "type": "uint16_le", "unit": "mV"},
+          "resist": {"offset": 6, "length": 2, "type": "uint16_le"},
+          "runtime": {"offset": 8, "length": 1, "unit": "days"},
+          "temperature": {"offset": 9, "length": 1, "unit": "celsius"}
+        }
+      }
+    ]
+  },
+  "stateValues": {
+    "sensorState": {
+      "0x01": "stopped",
+      "0x02": "warmup",
+      "0x04": "questionMarks",
+      "0x05": "sensorFailed",
+      "0x06": "ok"
+    },
+    "calibrationState": {
+      "0x01": "stopped",
+      "0x02": "warmingUp",
+      "0x04": "needsFirstCalibration",
+      "0x05": "needsSecondCalibration",
+      "0x06": "ok",
+      "0x07": "needsCalibration",
+      "0x08": "calibrationError"
+    }
+  },
+  "trendValues": {
+    "0x01": "doubleDown",
+    "0x02": "singleDown",
+    "0x03": "fortyFiveDown",
+    "0x04": "flat",
+    "0x05": "fortyFiveUp",
+    "0x06": "singleUp",
+    "0x07": "doubleUp",
+    "0x08": "notComputable",
+    "0x09": "rateOutOfRange"
+  }
+}

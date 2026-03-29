@@ -1,0 +1,180 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T09:35:00Z",
+    "source": "Protocol documentation synthesis",
+    "type": "dexcom-g6-glucose-fixtures",
+    "notes": "Sample G6 glucose readings for parsing tests"
+  },
+  "glucoseReadings": [
+    {
+      "name": "normal_reading_120",
+      "description": "Normal glucose reading of 120 mg/dL, flat trend",
+      "rawHex": "310601000000E80300007800060400",
+      "parsed": {
+        "opcode": "0x31",
+        "status": "0x06",
+        "sequence": 1,
+        "timestamp": 1000,
+        "glucoseRaw": 120,
+        "glucoseMgDl": 120,
+        "state": "ok",
+        "trend": "flat"
+      }
+    },
+    {
+      "name": "high_reading_250_rising",
+      "description": "High glucose 250 mg/dL, rising fast",
+      "rawHex": "3106050000005003000FA0000606",
+      "parsed": {
+        "opcode": "0x31",
+        "status": "0x06",
+        "sequence": 5,
+        "timestamp": 850,
+        "glucoseRaw": 250,
+        "glucoseMgDl": 250,
+        "state": "ok",
+        "trend": "singleUp"
+      }
+    },
+    {
+      "name": "low_reading_65_falling",
+      "description": "Low glucose 65 mg/dL, falling",
+      "rawHex": "31060A000000C20100004100060200",
+      "parsed": {
+        "opcode": "0x31",
+        "status": "0x06",
+        "sequence": 10,
+        "timestamp": 450,
+        "glucoseRaw": 65,
+        "glucoseMgDl": 65,
+        "state": "ok",
+        "trend": "singleDown"
+      }
+    },
+    {
+      "name": "warmup_no_reading",
+      "description": "Sensor in warmup, no glucose value",
+      "rawHex": "3102000000000000000000000200",
+      "parsed": {
+        "opcode": "0x31",
+        "status": "0x02",
+        "sequence": 0,
+        "timestamp": 0,
+        "glucoseRaw": 0,
+        "glucoseMgDl": null,
+        "state": "warmup",
+        "trend": null
+      }
+    },
+    {
+      "name": "sensor_failed",
+      "description": "Sensor failed state",
+      "rawHex": "3105140000002C0100000000050000",
+      "parsed": {
+        "opcode": "0x31",
+        "status": "0x05",
+        "sequence": 20,
+        "timestamp": 300,
+        "glucoseRaw": 0,
+        "glucoseMgDl": null,
+        "state": "sensorFailed",
+        "trend": null
+      }
+    }
+  ],
+  "backfillReadings": [
+    {
+      "name": "backfill_single_reading",
+      "description": "Single backfill glucose point",
+      "rawHex": "35017800D2040000",
+      "parsed": {
+        "opcode": "0x35",
+        "sequence": 1,
+        "glucoseRaw": 120,
+        "timestamp": 1234
+      }
+    },
+    {
+      "name": "backfill_multiple",
+      "description": "Multiple backfill points in one packet",
+      "rawHex": "3501780001000000780002000000780003000000",
+      "parsed": {
+        "count": 3,
+        "readings": [
+          {"sequence": 1, "glucoseRaw": 120, "timestamp": 1},
+          {"sequence": 2, "glucoseRaw": 120, "timestamp": 2},
+          {"sequence": 3, "glucoseRaw": 120, "timestamp": 3}
+        ]
+      }
+    }
+  ],
+  "calibrationResponses": [
+    {
+      "name": "calibration_accepted",
+      "description": "Calibration value accepted",
+      "rawHex": "330001",
+      "parsed": {
+        "opcode": "0x33",
+        "status": "0x00",
+        "accepted": true
+      }
+    },
+    {
+      "name": "calibration_rejected",
+      "description": "Calibration value rejected",
+      "rawHex": "330100",
+      "parsed": {
+        "opcode": "0x33",
+        "status": "0x01",
+        "accepted": false,
+        "reason": "out of range"
+      }
+    }
+  ],
+  "batteryResponses": [
+    {
+      "name": "battery_good",
+      "description": "Good battery status",
+      "rawHex": "23001C0D1C0D640005E024",
+      "parsed": {
+        "opcode": "0x23",
+        "status": "0x00",
+        "voltageA": 3356,
+        "voltageB": 3356,
+        "resist": 100,
+        "runtime": 5,
+        "temperature": 36
+      }
+    },
+    {
+      "name": "battery_low",
+      "description": "Low battery status",
+      "rawHex": "2300B80BB80B6400505A1E",
+      "parsed": {
+        "opcode": "0x23",
+        "status": "0x00",
+        "voltageA": 3000,
+        "voltageB": 3000,
+        "resist": 100,
+        "runtime": 80,
+        "temperature": 30
+      }
+    }
+  ],
+  "errorResponses": [
+    {
+      "name": "transmitter_not_paired",
+      "description": "Transmitter requires pairing",
+      "rawHex": "FF01",
+      "errorCode": "0x01",
+      "meaning": "Not authenticated"
+    },
+    {
+      "name": "invalid_command",
+      "description": "Unknown command sent",
+      "rawHex": "FF02",
+      "errorCode": "0x02",
+      "meaning": "Invalid command"
+    }
+  ]
+}

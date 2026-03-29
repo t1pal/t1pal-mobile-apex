@@ -1,0 +1,242 @@
+{
+  "_comment": "Libre 2 Streaming Unlock Test Vectors extracted from LibreTransmitter",
+  "_source": "externals/LibreTransmitter/LibreSensor/SensorContents/PreLibre2.swift",
+  "_task": "LIBRE-SYNTH-003",
+  "_updated": "2026-02-13",
+  "_description": "Streaming unlock payload generation and crypto primitives for Libre 2 BLE",
+
+  "crypto_constants": {
+    "key": [41157, 26720, 0, 5318],
+    "keyHex": ["0xA0C5", "0x6860", "0x0000", "0x14C6"],
+    "keyBytes": [165, 192, 96, 104, 0, 0, 198, 20],
+    "xorMagic1": "0x4163",
+    "xorMagic2": "0x4344",
+    "prepareVariablesMagic": "0x241a",
+    "usefulFunctionX": "0x1b",
+    "usefulFunctionY": "0x1b6a",
+    "activateParamsByte0": "0x1b",
+    "headerFooterArg_libreUS14day": "0xcadc"
+  },
+
+  "sensor_type_args": {
+    "libre2": {
+      "description": "EU/International Libre 2",
+      "getArg": "UInt16(info[5], info[4]) ^ 0x44",
+      "patchInfoXor": "0x44"
+    },
+    "libreUS14day": {
+      "description": "US 14-day Libre 2",
+      "headerFooterArg": "0xcadc",
+      "bodyArg": "UInt16(info[5], info[4])"
+    }
+  },
+
+  "algorithm_vectors": [
+    {
+      "id": "processCrypto_basic",
+      "description": "Test processCrypto with known input",
+      "function": "processCrypto",
+      "source_line": 129,
+      "algorithm": [
+        "op(value) = (value >> 2) ^ (key[1] if bit0) ^ (key[0] if bit1)",
+        "r0 = op(input[0]) ^ input[3]",
+        "r1 = op(r0) ^ input[2]",
+        "r2 = op(r1) ^ input[1]",
+        "r3 = op(r2) ^ input[0]",
+        "r4 = op(r3)",
+        "r5 = op(r4 ^ r0)",
+        "r6 = op(r5 ^ r1)",
+        "r7 = op(r6 ^ r2)",
+        "return [r3^r7, r2^r6, r1^r5, r0^r4]"
+      ],
+      "notes": "Custom cipher based on bit manipulation and XOR with key constants"
+    },
+    {
+      "id": "prepareVariables_block",
+      "description": "Prepare variables for FRAM block decryption",
+      "function": "prepareVariables(id:x:y:)",
+      "source_line": 170,
+      "algorithm": [
+        "s1 = UInt16(id[5], id[4]) + x + y",
+        "s2 = UInt16(id[3], id[2]) + key[2]",
+        "s3 = UInt16(id[1], id[0]) + x * 2",
+        "s4 = 0x241a ^ key[3]",
+        "return [s1, s2, s3, s4]"
+      ]
+    },
+    {
+      "id": "usefulFunction",
+      "description": "Generate activation/enable data bytes",
+      "function": "usefulFunction(id:x:y:)",
+      "source_line": 204,
+      "algorithm": [
+        "blockKey = processCrypto(prepareVariables(id, x, y))",
+        "r1 = blockKey[0] ^ 0x4163",
+        "r2 = blockKey[1] ^ 0x4344",
+        "return [low(r1), high(r1), low(r2), high(r2)]"
+      ]
+    }
+  ],
+
+  "streaming_unlock_vectors": [
+    {
+      "id": "unlock_payload_structure",
+      "description": "Structure of 12-byte streaming unlock payload",
+      "function": "streamingUnlockPayload",
+      "source_line": 98,
+      "inputParameters": {
+        "sensorUID": "8-byte sensor UID from NFC",
+        "info": "6-byte patch info from NFC command 0xA1",
+        "enableTime": "UInt32 timestamp when streaming was enabled",
+        "unlockCount": "UInt16 counter incremented each unlock"
+      },
+      "outputStructure": {
+        "bytes_0_3": "time = enableTime + unlockCount (little-endian UInt32)",
+        "bytes_4_11": "8-byte crypto result from processCrypto chain"
+      },
+      "algorithm": [
+        "time = enableTime + unlockCount",
+        "b[0..3] = little-endian bytes of time",
+        "ad = usefulFunction(sensorUID, 0x1b, 0x1b6a)",
+        "ed = usefulFunction(sensorUID, 0x1e, (enableTime & 0xFFFF) ^ UInt16(info[5], info[4]))",
+        "t11 = UInt16(ed[1], ed[0]) ^ UInt16(b[3], b[2])",
+        "t12 = UInt16(ad[1], ad[0])",
+        "t13 = UInt16(ed[3], ed[2]) ^ UInt16(b[1], b[0])",
+        "t14 = UInt16(ad[3], ad[2])",
+        "t2 = processCrypto(prepareVariables(sensorUID, t11, t12, t13, t14))",
+        "t31 = crc16([0xc1,0xc4,0xc3,0xc0,0xd4,0xe1,0xe7,0xba, t2[0].lo, t2[0].hi]).byteSwapped",
+        "t32 = crc16([t2[1].lo, t2[1].hi, t2[2].lo, t2[2].hi, t2[3].lo, t2[3].hi]).byteSwapped",
+        "t33 = crc16([ad[0], ad[1], ad[2], ad[3], ed[0], ed[1]]).byteSwapped",
+        "t34 = crc16([ed[2], ed[3], b[0], b[1], b[2], b[3]]).byteSwapped",
+        "t4 = processCrypto(prepareVariables(sensorUID, t31, t32, t33, t34))",
+        "return [b[0], b[1], b[2], b[3], t4[0..3] as bytes]"
+      ],
+      "crc16_magic_bytes": [193, 196, 195, 192, 212, 225, 231, 186],
+      "crc16_magic_hex": "c1c4c3c0d4e1e7ba"
+    }
+  ],
+
+  "activation_parameters_vector": {
+    "id": "activate_params",
+    "description": "Generate 5-byte activation parameters",
+    "function": "activateParameters(id:)",
+    "source_line": 90,
+    "algorithm": [
+      "d = usefulFunction(id, 0x1b, 0x1b6a)",
+      "return [0x1b, d[0], d[1], d[2], d[3]]"
+    ],
+    "outputSize": 5
+  },
+
+  "ble_decryption_vector": {
+    "id": "ble_decrypt",
+    "description": "Decrypt Libre 2 BLE payload",
+    "function": "decryptBLE(id:data:)",
+    "source_line": 56,
+    "algorithm": [
+      "d = usefulFunction(id, 0x1b, 0x1b6a)",
+      "x = (UInt16(d[1], d[0]) ^ UInt16(d[3], d[2])) | 0x63",
+      "y = UInt16(data[1], data[0]) ^ 0x63",
+      "initialKey = processCrypto(prepareVariables(id, x, y))",
+      "Generate 64-byte key by iterating processCrypto 8 times",
+      "XOR data[2:] with key bytes",
+      "Verify CRC16 in last 2 bytes"
+    ],
+    "inputSize": 46,
+    "outputSize": 44,
+    "crcOffset": 42
+  },
+
+  "fram_decryption_vector": {
+    "id": "fram_decrypt",
+    "description": "Decrypt 43 blocks (344 bytes) of Libre 2 FRAM",
+    "function": "decryptFRAM(type:id:info:data:)",
+    "source_line": 11,
+    "blockCount": 43,
+    "blockSize": 8,
+    "totalSize": 344,
+    "algorithm": [
+      "For each block i in 0..42:",
+      "  arg = getArg(block: i)  // varies by sensor type",
+      "  input = prepareVariables(id, i, arg)",
+      "  blockKey = processCrypto(input)",
+      "  XOR 8 bytes of data with blockKey (4 UInt16s as little-endian)"
+    ]
+  },
+
+  "test_vectors": {
+    "example1": {
+      "description": "First LibreTransmitter test vector",
+      "source": "Libre2.Example",
+      "sensorId": [157, 129, 194, 0, 0, 164, 7, 224],
+      "sensorIdHex": "9d81c20000a407e0",
+      "sensorInfo": [157, 8, 48, 1, 115, 23],
+      "sensorInfoHex": "9d0830017317",
+      "encryptedFRAM_size": 344,
+      "notes": "See fixture_libre_fram.json for full encrypted data"
+    },
+    "example2": {
+      "description": "Second LibreTransmitter test vector",
+      "source": "Libre2.Example2",
+      "sensorId": [223, 32, 190, 0, 0, 164, 7, 224],
+      "sensorIdHex": "df20be0000a407e0",
+      "sensorInfo": [157, 8, 48, 1, 118, 37],
+      "sensorInfoHex": "9d0830017625"
+    },
+    "ble_example": {
+      "description": "BLE decryption test vector",
+      "source": "Libre2.BLEExample",
+      "sensorId": [47, 231, 177, 0, 0, 164, 7, 224],
+      "sensorIdHex": "2fe7b10000a407e0",
+      "encryptedBLE": [177, 148, 250, 237, 44, 222, 161, 105, 70, 87, 207, 208, 216, 90, 170, 241, 226, 137, 28, 233, 172, 130, 22, 251, 103, 161, 211, 182, 63, 145, 205, 24, 75, 149, 49, 108, 4, 95, 225, 150, 196, 253, 20, 252, 104, 224],
+      "encryptedBLEHex": "b194faed2cdea1694657cfd0d85aaaf1e2891ce9ac8216fb67a1d3b63f91cd184b95316c045fe196c4fd14fc68e0",
+      "encryptedBLESize": 46
+    }
+  },
+
+  "crc16_table": {
+    "description": "CRC16 lookup table used by streamingUnlockPayload",
+    "seed": "0xFFFF",
+    "algorithm": "CRC16-CCITT variant with byte swap",
+    "source_line": 749,
+    "notes": "Full 256-entry table in source, result is bit-reversed and byte-swapped"
+  },
+
+  "python_compat": {
+    "description": "Python implementation for cross-validation",
+    "key_constant": "KEY = [0xA0C5, 0x6860, 0x0000, 0x14C6]",
+    "process_crypto": [
+      "def op(value, key):",
+      "    res = value >> 2",
+      "    if value & 1: res ^= key[1]",
+      "    if value & 2: res ^= key[0]",
+      "    return res & 0xFFFF",
+      "",
+      "def process_crypto(inp, key=KEY):",
+      "    r0 = op(inp[0], key) ^ inp[3]",
+      "    r1 = op(r0, key) ^ inp[2]",
+      "    r2 = op(r1, key) ^ inp[1]",
+      "    r3 = op(r2, key) ^ inp[0]",
+      "    r4 = op(r3, key)",
+      "    r5 = op(r4 ^ r0, key)",
+      "    r6 = op(r5 ^ r1, key)",
+      "    r7 = op(r6 ^ r2, key)",
+      "    return [r3 ^ r7, r2 ^ r6, r1 ^ r5, r0 ^ r4]"
+    ],
+    "prepare_variables": [
+      "def prepare_variables(sensor_id, x, y, key=KEY):",
+      "    s1 = (sensor_id[5] << 8 | sensor_id[4]) + x + y",
+      "    s2 = (sensor_id[3] << 8 | sensor_id[2]) + key[2]",
+      "    s3 = (sensor_id[1] << 8 | sensor_id[0]) + x * 2",
+      "    s4 = 0x241a ^ key[3]",
+      "    return [s1 & 0xFFFF, s2 & 0xFFFF, s3 & 0xFFFF, s4 & 0xFFFF]"
+    ],
+    "useful_function": [
+      "def useful_function(sensor_id, x, y):",
+      "    block_key = process_crypto(prepare_variables(sensor_id, x, y))",
+      "    r1 = block_key[0] ^ 0x4163",
+      "    r2 = block_key[1] ^ 0x4344",
+      "    return [r1 & 0xFF, (r1 >> 8) & 0xFF, r2 & 0xFF, (r2 >> 8) & 0xFF]"
+    ]
+  }
+}

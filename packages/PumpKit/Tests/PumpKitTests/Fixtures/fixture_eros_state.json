@@ -1,0 +1,665 @@
+{
+  "_source": "OmniKit PodStateTests.swift, StatusTests.swift, PodInfoTests.swift (Loop/Trio)",
+  "_task": "EROS-SYNTH-006",
+  "_description": "Test vectors for Omnipod Eros pod state parsing: nonces, status, detailed status, alerts",
+  "_format": {
+    "nonce": "32-bit value used for command authentication",
+    "status_response": "12 bytes: deliveryStatus, podProgress, timeActive, reservoir, etc.",
+    "detailed_status": "21 bytes: faultEventCode, totalInsulinDelivered, errorEventInfo, etc.",
+    "triggered_alerts": "19 bytes: alert activation timestamps for slots 0-7"
+  },
+
+  "nonce_vectors": [
+    {
+      "id": "nonce_sequence",
+      "description": "Nonce calculation sequence from PodState initialization",
+      "source": "PodStateTests.swift testNonceValues()",
+      "input": {
+        "address": "0x1f000000",
+        "lot": 42560,
+        "tid": 661771
+      },
+      "expected_sequence": [
+        {"index": 0, "nonce": "0x8c61ee59", "nonceDecimal": 2355760729},
+        {"index": 1, "nonce": "0xc0256620", "nonceDecimal": 3224561184},
+        {"index": 2, "nonce": "0x15022c8a", "nonceDecimal": 352337034},
+        {"index": 3, "nonce": "0xacf076ca", "nonceDecimal": 2901080778}
+      ],
+      "notes": "Each call to advanceToNextNonce() moves to next value"
+    },
+    {
+      "id": "nonce_resync",
+      "description": "Nonce resynchronization after badNonce error",
+      "source": "PodStateTests.swift testResyncNonce()",
+      "input": {
+        "versionResponseHex": "011502070002070002020000a62b0002249da11f00ee860318",
+        "lot": 42539,
+        "tid": 140445,
+        "address": "0x1f00ee86",
+        "initialNonce": "0x8fd39264"
+      },
+      "error_scenario": {
+        "sentPacketHex": "1f00ee86ba1f00ee8624061c042e07c7c703c1f4",
+        "sentMessageSequenceNum": 9,
+        "sentNonce": "0x2e07c7c7",
+        "errorResponseHex": "06031492c482f5",
+        "errorType": "badNonce",
+        "nonceResyncKey": "0x92c4",
+        "expectedNonceAfterResync": "0x40ccdacb"
+      }
+    }
+  ],
+
+  "error_response_vectors": [
+    {
+      "id": "error_nonretryable",
+      "description": "Non-retryable error response",
+      "source": "PodStateTests.swift testErrorResponse()",
+      "hex": "0603070008019a",
+      "expected": {
+        "errorResponseType": "nonretryableError",
+        "errorCode": 7,
+        "faultEventCode": "noFaults",
+        "podProgress": "aboveFiftyUnits"
+      },
+      "parsing": {
+        "byte0": "0x06 = ErrorResponse type",
+        "byte1": "0x03 = length",
+        "byte2": "0x07 = errorCode",
+        "byte3": "0x00 = faultEventCode (noFaults)",
+        "byte4": "0x08 = podProgress (aboveFiftyUnits)",
+        "bytes5-6": "0x019a = CRC"
+      }
+    }
+  ],
+
+  "get_status_command_vectors": [
+    {
+      "id": "get_status_normal",
+      "description": "GetStatusCommand for normal status",
+      "source": "StatusTests.swift testStatusRequestCommand()",
+      "hex": "0e0100",
+      "expected": {
+        "type": "GetStatusCommand",
+        "podInfoType": "normal",
+        "podInfoTypeRaw": 0
+      }
+    },
+    {
+      "id": "get_status_triggered_alerts",
+      "description": "GetStatusCommand for triggered alerts",
+      "source": "StatusTests.swift testStatusRequestCommandTriggeredAlerts()",
+      "hex": "0e0101",
+      "expected": {
+        "type": "GetStatusCommand",
+        "podInfoType": "triggeredAlerts",
+        "podInfoTypeRaw": 1
+      }
+    },
+    {
+      "id": "get_status_detailed",
+      "description": "GetStatusCommand for detailed status (fault events)",
+      "source": "StatusTests.swift testStatusRequestCommandFaultEvents()",
+      "hex": "0e0102",
+      "expected": {
+        "type": "GetStatusCommand",
+        "podInfoType": "detailedStatus",
+        "podInfoTypeRaw": 2
+      }
+    }
+  ],
+
+  "status_response_vectors": [
+    {
+      "id": "status_46_units_left",
+      "description": "StatusResponse with 46 units remaining",
+      "source": "StatusTests.swift testStatusResponse46UnitsLeft()",
+      "hex": "1d19050ec82c08376f9801dc",
+      "expected": {
+        "type": "StatusResponse",
+        "deliveryStatus": "scheduledBasal",
+        "deliveryStatusRaw": 1,
+        "podProgressStatus": "fiftyOrLessUnits",
+        "podProgressRaw": 9,
+        "timeActiveMinutes": 3547,
+        "timeActiveFormatted": "59h7m",
+        "insulinDelivered": 129.45,
+        "reservoirLevel": 46.0,
+        "bolusNotDelivered": 2.2,
+        "lastProgrammingMessageSeqNum": 9,
+        "alerts": []
+      },
+      "parsing": {
+        "byte0": "0x1d = StatusResponse type",
+        "byte1": "0x19 = 0b00011001 → deliveryStatus=1, podProgress=9",
+        "bytes2-3": "0x050e = timeActive raw (3547 >> 4 = 221.6875... need clarification)",
+        "note": "Complex bit packing - see OmniKit StatusResponse.swift"
+      }
+    }
+  ],
+
+  "detailed_status_vectors": [
+    {
+      "id": "detailed_no_faults",
+      "description": "DetailedStatus with no faults (normal operation)",
+      "source": "PodInfoTests.swift testPodInfoNoFaultAlerts()",
+      "hex": "02080100000a003800000003ff008700000095ff0000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "aboveFiftyUnits",
+        "podProgressRaw": 8,
+        "deliveryStatus": "scheduledBasal",
+        "deliveryStatusRaw": 1,
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 10,
+        "totalInsulinDelivered": 2.8,
+        "faultEventCode": "noFaults",
+        "faultEventCodeRaw": 0,
+        "faultEventTimeSinceActivation": null,
+        "reservoirLevel": 51.15,
+        "reservoirLevelRaw": 1023,
+        "timeActiveMinutes": 135,
+        "timeActiveFormatted": "2h15m",
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": null,
+        "receiverLowGain": 2,
+        "radioRSSI": 21,
+        "previousPodProgressStatus": null
+      },
+      "notes": "reservoirLevel 0x03ff (1023) = 51.15U = above threshold magic number"
+    },
+    {
+      "id": "detailed_occlusion_fault",
+      "description": "DetailedStatus with occlusion check above threshold fault",
+      "source": "PodInfoTests.swift testFullMessage()",
+      "hex": "020d0000000000ab6a038403ff03860000285708030d0000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "podProgressRaw": 13,
+        "deliveryStatus": "suspended",
+        "deliveryStatusRaw": 0,
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 0,
+        "totalInsulinDelivered": 8.55,
+        "totalInsulinDeliveredRaw": 171,
+        "faultEventCode": "occlusionCheckAboveThreshold",
+        "faultEventCodeRaw": 106,
+        "faultEventTimeSinceActivationMinutes": 900,
+        "faultEventTimeSinceActivationFormatted": "15h0m",
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 902,
+        "timeActiveFormatted": "15h2m",
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 1,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "aboveFiftyUnits"
+        },
+        "receiverLowGain": 1,
+        "radioRSSI": 23,
+        "previousPodProgressStatus": "aboveFiftyUnits"
+      }
+    },
+    {
+      "id": "detailed_delivery_error_priming",
+      "description": "DetailedStatus with delivery error during priming",
+      "source": "PodInfoTests.swift testPodInfoDeliveryErrorDuringPriming()",
+      "hex": "020f0000000900345c000103ff0001000005ae056029",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "inactive",
+        "podProgressRaw": 15,
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 9,
+        "faultEventCode": "primeOpenCountTooLow",
+        "faultEventCodeRaw": 92,
+        "faultEventTimeSinceActivationMinutes": 1,
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 1,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 0,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "primingCompleted"
+        },
+        "receiverLowGain": 2,
+        "radioRSSI": 46,
+        "previousPodProgressStatus": "primingCompleted"
+      }
+    },
+    {
+      "id": "detailed_error_during_priming_leaking",
+      "description": "DetailedStatus needle cap removed before priming - leaking",
+      "source": "PodInfoTests.swift testPodInfoDuringPriming()",
+      "hex": "020d0000000600008f000003ff0000000003a20386a0",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 6,
+        "faultEventCode": "command1AParseUnexpectedFailed",
+        "faultEventCodeRaw": 143,
+        "faultEventTimeSinceActivationMinutes": 0,
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 0,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 0,
+          "podProgressStatus": "pairingCompleted"
+        },
+        "receiverLowGain": 2,
+        "radioRSSI": 34,
+        "previousPodProgressStatus": "pairingCompleted"
+      }
+    },
+    {
+      "id": "detailed_basal_over_infusion",
+      "description": "DetailedStatus with basal over-infusion fault after 42+ hours",
+      "source": "PodInfoTests.swift testPodInfoFaultEventErrorShuttingDown()",
+      "hex": "020d0000000407f28609ff03ff0a0200000823080000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 4,
+        "totalInsulinDelivered": 101.7,
+        "faultEventCode": "basalOverInfusionPulse",
+        "faultEventCodeRaw": 134,
+        "faultEventTimeSinceActivationMinutes": 2559,
+        "faultEventTimeSinceActivationFormatted": "42h39m",
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 2562,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 0,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "aboveFiftyUnits"
+        },
+        "receiverLowGain": 0,
+        "radioRSSI": 35,
+        "previousPodProgressStatus": "aboveFiftyUnits"
+      }
+    },
+    {
+      "id": "detailed_occlusion_59h",
+      "description": "DetailedStatus with occlusion at 59h56m",
+      "source": "PodInfoTests.swift testPodInfoFaultEventCheckAboveThreshold()",
+      "hex": "020d0000000407eb6a0e0c03ff0e1400002817080000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 4,
+        "totalInsulinDelivered": 101.35,
+        "faultEventCode": "occlusionCheckAboveThreshold",
+        "faultEventCodeRaw": 106,
+        "faultEventTimeSinceActivationMinutes": 3596,
+        "faultEventTimeSinceActivationFormatted": "59h56m",
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 3604,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 1,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "aboveFiftyUnits"
+        },
+        "receiverLowGain": 0,
+        "radioRSSI": 23,
+        "previousPodProgressStatus": "aboveFiftyUnits"
+      }
+    },
+    {
+      "id": "detailed_bolus_not_delivered",
+      "description": "DetailedStatus with 0.05U bolus not delivered",
+      "source": "PodInfoTests.swift testPodInfoFaultEventBolusNotDelivered()",
+      "hex": "020f0000010200ec6a026803ff026b000028a7082023",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "inactive",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.05,
+        "lastProgrammingMessageSeqNum": 2,
+        "totalInsulinDelivered": 11.8,
+        "faultEventCode": "occlusionCheckAboveThreshold",
+        "faultEventCodeRaw": 106,
+        "faultEventTimeSinceActivationMinutes": 616,
+        "faultEventTimeSinceActivationFormatted": "10h16m",
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 619,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": false,
+          "occlusionType": 1,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "aboveFiftyUnits"
+        },
+        "receiverLowGain": 2,
+        "radioRSSI": 39,
+        "previousPodProgressStatus": "aboveFiftyUnits"
+      }
+    },
+    {
+      "id": "detailed_reset_lvd",
+      "description": "DetailedStatus reset due to low voltage detect",
+      "source": "PodInfoTests.swift testPodInfoFaultEventResetDueToLowVoltageDetect()",
+      "hex": "020D00000000000012FFFF03FF00160000879A070000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 0,
+        "totalInsulinDelivered": 0.0,
+        "faultEventCode": "resetDueToLVD",
+        "faultEventCodeRaw": 18,
+        "faultEventTimeSinceActivation": null,
+        "faultEventTimeSinceActivationRaw": 65535,
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 22,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": true,
+          "occlusionType": 0,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "insertingCannula"
+        },
+        "receiverLowGain": 2,
+        "radioRSSI": 26,
+        "previousPodProgressStatus": "insertingCannula"
+      },
+      "notes": "faultEventTimeSinceActivation = 0xFFFF means invalid/unknown"
+    },
+    {
+      "id": "detailed_fault_12",
+      "description": "DetailedStatus with fault 0x12 (resetDueToLVD) variant",
+      "source": "PodInfoTests.swift testPodFault12()",
+      "hex": "020d00000000000012ffff03ff000000008792070000",
+      "expected": {
+        "podInfoType": "detailedStatus",
+        "podProgressStatus": "faultEventOccurred",
+        "deliveryStatus": "suspended",
+        "bolusNotDelivered": 0.0,
+        "lastProgrammingMessageSeqNum": 0,
+        "totalInsulinDelivered": 0.0,
+        "faultEventCode": "resetDueToLVD",
+        "faultEventCodeRaw": 18,
+        "faultEventTimeSinceActivation": null,
+        "reservoirLevel": 51.15,
+        "timeActiveMinutes": 0,
+        "unacknowledgedAlerts": 0,
+        "faultAccessingTables": false,
+        "errorEventInfo": {
+          "insulinStateTableCorruption": true,
+          "occlusionType": 0,
+          "immediateBolusInProgress": false,
+          "podProgressStatus": "insertingCannula"
+        },
+        "receiverLowGain": 2,
+        "radioRSSI": 18,
+        "previousPodProgressStatus": "insertingCannula"
+      }
+    }
+  ],
+
+  "triggered_alerts_vectors": [
+    {
+      "id": "alerts_empty",
+      "description": "TriggeredAlerts with no alerts triggered",
+      "source": "PodInfoTests.swift testPodInfoTriggeredAlertsEmpty()",
+      "hex": "01000000000000000000000000000000000000",
+      "expected": {
+        "podInfoType": "triggeredAlerts",
+        "alertActivations": [
+          {"slot": 0, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 1, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 2, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 3, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 4, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 5, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 6, "timeInterval": null, "timeIntervalStr": null},
+          {"slot": 7, "timeInterval": null, "timeIntervalStr": null}
+        ]
+      }
+    },
+    {
+      "id": "alerts_suspend_active",
+      "description": "TriggeredAlerts after 2 hour suspend",
+      "source": "PodInfoTests.swift testPodInfoTriggeredAlertsSuspendStillActive()",
+      "hex": "010000000000000000000000000bd70c400000",
+      "expected": {
+        "podInfoType": "triggeredAlerts",
+        "alertActivations": [
+          {"slot": 0, "timeInterval": null},
+          {"slot": 1, "timeInterval": null},
+          {"slot": 2, "timeInterval": null},
+          {"slot": 3, "timeInterval": null},
+          {"slot": 4, "timeInterval": null},
+          {"slot": 5, "timeIntervalMinutes": 3031, "timeIntervalStr": "50h31m"},
+          {"slot": 6, "timeIntervalMinutes": 3136, "timeIntervalStr": "52h16m"},
+          {"slot": 7, "timeInterval": null}
+        ]
+      }
+    },
+    {
+      "id": "alerts_replace_after_3d8h",
+      "description": "TriggeredAlerts - replace pod after 3 days 8 hours",
+      "source": "PodInfoTests.swift testPodInfoTriggeredAlertsReplacePodAfter3DaysAnd8Hours()",
+      "hex": "010000000000000000000000000000000010e1",
+      "expected": {
+        "podInfoType": "triggeredAlerts",
+        "alertActivations": [
+          {"slot": 7, "timeIntervalMinutes": 4321, "timeIntervalStr": "72h1m"}
+        ]
+      }
+    },
+    {
+      "id": "alerts_reservoir_empty",
+      "description": "TriggeredAlerts - replace pod after reservoir empty",
+      "source": "PodInfoTests.swift testPodInfoTriggeredAlertsReplacePodAfterReservoirEmpty()",
+      "hex": "010000000000001285000011c700000000119c",
+      "expected": {
+        "podInfoType": "triggeredAlerts",
+        "alertActivations": [
+          {"slot": 2, "timeIntervalMinutes": 4741, "timeIntervalStr": "79h1m"},
+          {"slot": 4, "timeIntervalMinutes": 4551, "timeIntervalStr": "75h51m"},
+          {"slot": 7, "timeIntervalMinutes": 4508, "timeIntervalStr": "75h8m"}
+        ]
+      }
+    },
+    {
+      "id": "alerts_replace_pod",
+      "description": "TriggeredAlerts - standard replace pod",
+      "source": "PodInfoTests.swift testPodInfoTriggeredAlertsReplacePod()",
+      "hex": "010000000000001284000000000000000010e0",
+      "expected": {
+        "podInfoType": "triggeredAlerts",
+        "alertActivations": [
+          {"slot": 2, "timeIntervalMinutes": 4740, "timeIntervalStr": "79h"},
+          {"slot": 7, "timeIntervalMinutes": 4320, "timeIntervalStr": "72h"}
+        ]
+      }
+    }
+  ],
+
+  "activation_time_vectors": [
+    {
+      "id": "activation_time_fault",
+      "description": "PodInfoActivationTime with tempPulseChanInactive fault",
+      "source": "PodInfoTests.swift testPodInfoActivationTime()",
+      "hex": "059200010000000000000000091912170e",
+      "expected": {
+        "podInfoType": "activationTime",
+        "faultEventCode": "tempPulseChanInactive",
+        "faultEventCodeRaw": 146,
+        "faultTimeMinutes": 1,
+        "dateComponents": {
+          "year": 18,
+          "month": 9,
+          "day": 25,
+          "hour": 23,
+          "minute": 14
+        },
+        "dateFormatted": "2018-09-25 23:14"
+      }
+    }
+  ],
+
+  "pulse_log_vectors": [
+    {
+      "id": "pulse_log_recent",
+      "description": "PodInfoPulseLogRecent (last 50 entries)",
+      "source": "PodInfoTests.swift testPodInfoPulseLogRecent()",
+      "hex": "50008634212e00392031003c212d004120300044202c0049212e004c212b0051202f0054212c00592030805c202d806120308000212e800521318008202f800d20328010202f801521318018202f801d21318020202e8025213300282032002d2135003021310035213400382131003d2035004020310045213300482030004d21320050212f0055203300582030805d21328060202f800120308004202c80092131800c2130801121328014203180192133801c2031802120328024213200292035002c21310031213400",
+      "expected": {
+        "podInfoType": "pulseLogRecent",
+        "indexLastEntry": 134,
+        "sampleEntries": [
+          {"index": 0, "value": "0x34212e00"},
+          {"index": 9, "value": "0x59203080"},
+          {"index": 19, "value": "0x1d213180"},
+          {"index": 29, "value": "0x45213300"},
+          {"index": 39, "value": "0x09213180"},
+          {"index": 49, "value": "0x31213400"}
+        ]
+      }
+    },
+    {
+      "id": "pulse_log_previous",
+      "description": "PodInfoPulseLogPrevious (50 previous entries)",
+      "source": "PodInfoTests.swift testPodInfoPulseLogPrevious()",
+      "hex": "51003214602500196128001c6124002161280024612500296129002c60260031602a003460260039612a803c61268041602c800060278005632880086025800d6128801061258015612780186023801d6026802061228025602700286124002d2128003020270035202a00382027003d202a004020290045202c0048202a004d212c005021290055212c00582129805d202b806020288001202d8004212a8009202d800c21298011212a80142129801921801c212a8021212c8024202c0029212f002c212d003120310082",
+      "expected": {
+        "podInfoType": "pulseLogPrevious",
+        "nEntries": 50,
+        "sampleEntries": [
+          {"index": 0, "value": "0x14602500"},
+          {"index": 9, "value": "0x39612a80"},
+          {"index": 19, "value": "0x1d602680"},
+          {"index": 29, "value": "0x45202c00"},
+          {"index": 39, "value": "0x09202d80"},
+          {"index": 49, "value": "0x20310082"}
+        ]
+      }
+    },
+    {
+      "id": "pulse_log_plus_partial",
+      "description": "PodInfoPulseLogPlus with 55 partial entries",
+      "source": "PodInfoTests.swift testPodInfoPulseLogPlusPartial()",
+      "hex": "030000000003043c00622a8001612980006124800160268000611f0001601a0000611f0001602600006020000160260000602200016127000060200001602500006020000161250000612180016126800061208001612780006120800160268000612080016025800061208005612500086020000d6126001060220015602800186121001d6028002060210025612700286121002d6028003061220035602800386024003d6027004061240045612c80486126804d602d800060278005632b80086126800d602c801061258015602d80186023001d612100206122002561290028602300",
+      "expected": {
+        "podInfoType": "pulseLogPlus",
+        "faultEventCode": "noFaults",
+        "timeFaultEventMinutes": 0,
+        "timeActivationMinutes": 3,
+        "entrySize": 4,
+        "maxEntries": 60,
+        "nEntries": 55,
+        "sampleEntries": [
+          {"index": 0, "value": "0x00622a80"},
+          {"index": 9, "value": "0x01602600"},
+          {"index": 19, "value": "0x01612780"},
+          {"index": 29, "value": "0x15602800"},
+          {"index": 39, "value": "0x3d602700"},
+          {"index": 49, "value": "0x15602d80"},
+          {"index": 54, "value": "0x28602300"}
+        ]
+      }
+    },
+    {
+      "id": "pulse_log_plus_full",
+      "description": "PodInfoPulseLogPlus with full 60 entries",
+      "source": "PodInfoTests.swift testPodInfoPulseLogPlus()",
+      "hex": "030000000075043c5440260059402d805c41248061402d800041238005402d80084027800d402c801041248015412b80184124001d4028002040240025412c00284125002d412b003040270035412d00384026003d412c004041250045402c00484024004d412c005041240055412e00584126805d402f806040268001402f800440268009412e800c40258011402e801440278019402e001c40240021412d002440260029412f002c4126003164300034622600396230003c62260041622f004462260049622e004c63260051632d0054602800594130805c412780614031800040288005413080084027800d4131801041268015412f80",
+      "expected": {
+        "podInfoType": "pulseLogPlus",
+        "faultEventCode": "noFaults",
+        "timeFaultEventMinutes": 0,
+        "timeActivationMinutes": 117,
+        "entrySize": 4,
+        "maxEntries": 60,
+        "nEntries": 60,
+        "sampleEntries": [
+          {"index": 0, "value": "0x54402600"},
+          {"index": 9, "value": "0x15412b80"},
+          {"index": 19, "value": "0x3d412c00"},
+          {"index": 29, "value": "0x01402f80"},
+          {"index": 39, "value": "0x29412f00"},
+          {"index": 49, "value": "0x51632d00"},
+          {"index": 59, "value": "0x15412f80"}
+        ]
+      }
+    }
+  ],
+
+  "pod_progress_status_enum": {
+    "description": "PodProgressStatus values from OmniKit",
+    "values": [
+      {"raw": 0, "name": "initialized"},
+      {"raw": 1, "name": "tankPowerActivated"},
+      {"raw": 2, "name": "tankFillCompleted"},
+      {"raw": 3, "name": "pairingCompleted"},
+      {"raw": 4, "name": "primingCompleted"},
+      {"raw": 5, "name": "readyForBasalSchedule"},
+      {"raw": 6, "name": "insertingCannula"},
+      {"raw": 7, "name": "runningAboveMinVolume"},
+      {"raw": 8, "name": "aboveFiftyUnits"},
+      {"raw": 9, "name": "fiftyOrLessUnits"},
+      {"raw": 10, "name": "oneNotUsedButInAps"},
+      {"raw": 11, "name": "twoNotUsedButInAps"},
+      {"raw": 12, "name": "threeNotUsedButInAps"},
+      {"raw": 13, "name": "faultEventOccurred"},
+      {"raw": 14, "name": "activationTimeExceeded"},
+      {"raw": 15, "name": "inactive"}
+    ]
+  },
+
+  "delivery_status_enum": {
+    "description": "DeliveryStatus values from OmniKit",
+    "values": [
+      {"raw": 0, "name": "suspended"},
+      {"raw": 1, "name": "scheduledBasal"},
+      {"raw": 2, "name": "tempBasal"},
+      {"raw": 3, "name": "priming"},
+      {"raw": 4, "name": "bolusAndTempBasal"},
+      {"raw": 5, "name": "bolus"},
+      {"raw": 6, "name": "bolusAndScheduledBasal"},
+      {"raw": 15, "name": "unknown"}
+    ]
+  },
+
+  "fault_event_codes": {
+    "description": "Common FaultEventCode values from OmniKit",
+    "values": [
+      {"raw": 0, "name": "noFaults"},
+      {"raw": 18, "name": "resetDueToLVD", "hex": "0x12"},
+      {"raw": 92, "name": "primeOpenCountTooLow", "hex": "0x5c"},
+      {"raw": 106, "name": "occlusionCheckAboveThreshold", "hex": "0x6a"},
+      {"raw": 134, "name": "basalOverInfusionPulse", "hex": "0x86"},
+      {"raw": 143, "name": "command1AParseUnexpectedFailed", "hex": "0x8f"},
+      {"raw": 146, "name": "tempPulseChanInactive", "hex": "0x92"}
+    ]
+  },
+
+  "python_compat": {
+    "description": "Python parsing functions for Eros pod state",
+    "code": "import struct\n\n# Pod Progress Status\nPOD_PROGRESS = {\n    0: 'initialized', 1: 'tankPowerActivated', 2: 'tankFillCompleted',\n    3: 'pairingCompleted', 4: 'primingCompleted', 5: 'readyForBasalSchedule',\n    6: 'insertingCannula', 7: 'runningAboveMinVolume', 8: 'aboveFiftyUnits',\n    9: 'fiftyOrLessUnits', 13: 'faultEventOccurred', 14: 'activationTimeExceeded',\n    15: 'inactive'\n}\n\n# Delivery Status\nDELIVERY_STATUS = {\n    0: 'suspended', 1: 'scheduledBasal', 2: 'tempBasal', 3: 'priming',\n    4: 'bolusAndTempBasal', 5: 'bolus', 6: 'bolusAndScheduledBasal'\n}\n\n# Fault Event Codes\nFAULT_CODES = {\n    0: 'noFaults', 18: 'resetDueToLVD', 92: 'primeOpenCountTooLow',\n    106: 'occlusionCheckAboveThreshold', 134: 'basalOverInfusionPulse',\n    143: 'command1AParseUnexpectedFailed', 146: 'tempPulseChanInactive'\n}\n\ndef parse_detailed_status(data: bytes) -> dict:\n    \"\"\"Parse DetailedStatus (0x02) response - 21 bytes.\n    \n    Format: 02 0J 0K LLLL MM NNNN PP QQQQ RRRR SSSS TT UU VV WW 0X YYYY\n    \"\"\"\n    if len(data) < 21 or data[0] != 0x02:\n        raise ValueError('Invalid DetailedStatus data')\n    \n    pod_progress = (data[1] >> 4) & 0x0F\n    delivery_status = data[1] & 0x0F\n    bolus_not_delivered_raw = (data[2] << 8 | data[3])\n    bolus_not_delivered = bolus_not_delivered_raw * 0.05  # pulses to units\n    last_seq = data[4]\n    total_delivered_raw = (data[5] << 8 | data[6])\n    total_delivered = total_delivered_raw * 0.05\n    fault_code = data[7]\n    fault_time_raw = (data[8] << 8 | data[9])\n    fault_time = None if fault_time_raw == 0xFFFF else fault_time_raw\n    reservoir_raw = (data[10] << 8 | data[11])\n    reservoir = 51.15 if reservoir_raw >= 1023 else reservoir_raw * 0.05\n    time_active = (data[12] << 8 | data[13])\n    alerts = data[14]\n    fault_access = bool(data[15] & 0x02)\n    \n    # Error event info (byte 16-17)\n    error_info = None\n    if data[16] != 0x00 or data[17] != 0x00:\n        error_info = {\n            'insulinStateTableCorruption': bool(data[16] & 0x80),\n            'occlusionType': (data[16] >> 5) & 0x03,\n            'immediateBolusInProgress': bool(data[16] & 0x10),\n            'podProgressStatus': POD_PROGRESS.get(data[16] & 0x0F, f'unknown({data[16] & 0x0F})')\n        }\n    \n    receiver_gain = (data[17] >> 6) & 0x03\n    rssi = data[17] & 0x3F\n    previous_progress = None if data[18] == 0xFF else POD_PROGRESS.get(data[18] & 0x0F)\n    \n    return {\n        'podProgressStatus': POD_PROGRESS.get(pod_progress, f'unknown({pod_progress})'),\n        'deliveryStatus': DELIVERY_STATUS.get(delivery_status, f'unknown({delivery_status})'),\n        'bolusNotDelivered': bolus_not_delivered,\n        'lastProgrammingMessageSeqNum': last_seq,\n        'totalInsulinDelivered': total_delivered,\n        'faultEventCode': FAULT_CODES.get(fault_code, f'unknown(0x{fault_code:02x})'),\n        'faultEventTimeSinceActivation': fault_time,\n        'reservoirLevel': reservoir,\n        'timeActiveMinutes': time_active,\n        'unacknowledgedAlerts': alerts,\n        'faultAccessingTables': fault_access,\n        'errorEventInfo': error_info,\n        'receiverLowGain': receiver_gain,\n        'radioRSSI': rssi,\n        'previousPodProgressStatus': previous_progress\n    }\n\ndef parse_status_response(data: bytes) -> dict:\n    \"\"\"Parse StatusResponse (0x1d) - 10 bytes.\"\"\"\n    if len(data) < 10 or data[0] != 0x1d:\n        raise ValueError('Invalid StatusResponse data')\n    \n    # Complex bit-packed format - see OmniKit StatusResponse.swift\n    # This is a simplified version\n    return {\n        'type': 'StatusResponse',\n        'raw': data.hex()\n    }\n"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "description": "Dexcom G6 calibration message test vectors",
+    "source": "CGMBLEKit CalibrationDataRxMessageTests + protocol analysis",
+    "trace": "PROTO-G6-001",
+    "created": "2026-02-16",
+    "format": {
+      "calibrationDataTx": "opcode(1) + CRC(2) = 3 bytes",
+      "calibrationDataRx": "opcode(1) + unknown(10) + glucose(2) + timestamp(4) + CRC(2) = 19 bytes"
+    }
+  },
+  "calibrationDataTx": {
+    "description": "Request message for calibration data",
+    "opcode": "0x32",
+    "examples": [
+      {
+        "description": "Standard calibration request",
+        "hex": "32e3b8",
+        "parsed": {
+          "opcode": 50
+        }
+      }
+    ]
+  },
+  "calibrationDataRx": {
+    "description": "Response message containing last calibration",
+    "opcode": "0x33",
+    "format": {
+      "byte_0": "opcode (0x33)",
+      "bytes_1_10": "unknown data",
+      "bytes_11_12": "glucose (little-endian, lower 12 bits = glucose value)",
+      "bytes_13_16": "timestamp (little-endian, session time in seconds)",
+      "bytes_17_18": "CRC-16"
+    },
+    "examples": [
+      {
+        "description": "CGMBLEKit test vector - valid calibration",
+        "source": "CalibrationDataRxMessageTests.swift",
+        "hex": "33002b290090012900ae00800050e929001225",
+        "parsed": {
+          "opcode": 51,
+          "glucose": 128,
+          "glucoseNote": "0x0080 & 0x0FFF = 128",
+          "timestamp": 698225488,
+          "timestampNote": "0x29e95000 little-endian = bytes [0x50, 0xe9, 0x29, 0x00]"
+        },
+        "valid": true
+      },
+      {
+        "description": "No calibration (glucose = 0)",
+        "hex": "33002b290090012900ae00000050e929001225",
+        "parsed": {
+          "opcode": 51,
+          "glucose": 0,
+          "timestamp": 698225488
+        },
+        "valid": false
+      },
+      {
+        "description": "High glucose calibration (200 mg/dL)",
+        "hex": "3300000000000000000000c800a0860100d8e7",
+        "parsed": {
+          "opcode": 51,
+          "glucose": 200,
+          "glucoseNote": "0x00c8 = 200",
+          "timestamp": 100000,
+          "timestampNote": "0x000186a0 = 100000 seconds"
+        },
+        "valid": true
+      }
+    ]
+  },
+  "crc_notes": {
+    "algorithm": "CRC-16/XMODEM (CRC-CCITT)",
+    "polynomial": "0x1021",
+    "initial_value": "0x0000",
+    "position": "last 2 bytes, little-endian"
+  }
+}

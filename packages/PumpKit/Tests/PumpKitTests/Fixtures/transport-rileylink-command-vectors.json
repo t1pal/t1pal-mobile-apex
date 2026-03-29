@@ -1,0 +1,230 @@
+{
+  "description": "RileyLink command layer test vectors",
+  "trace": "TRANSPORT-011",
+  "created": "2026-02-17",
+  "source": "TRANSPORT-LAYER-REFERENCE.md Section 2, rileylink_ios",
+  
+  "commands": [
+    {
+      "id": "RL-001",
+      "byte": "0x01",
+      "name": "getState",
+      "description": "Get RileyLink device state",
+      "request_format": "01",
+      "request_bytes": [1],
+      "response_format": "[responseCode]",
+      "example_response": "DD",
+      "response_bytes": [221]
+    },
+    {
+      "id": "RL-002",
+      "byte": "0x02",
+      "name": "getVersion",
+      "description": "Get firmware version string",
+      "request_format": "02",
+      "request_bytes": [2],
+      "response_format": "[responseCode][versionString...]",
+      "example_response": "DD7375626772667370792032",
+      "example_decoded": "subg_rfspy 2"
+    },
+    {
+      "id": "RL-003",
+      "byte": "0x03",
+      "name": "getPacket",
+      "description": "Listen for RF packet",
+      "request_format": "03 [channel:1] [timeoutMS:4BE]",
+      "example_request": "0300000007D0",
+      "example_decoded": {"channel": 0, "timeout_ms": 2000},
+      "response_format": "[responseCode][rssi:1][counter:1][data...]",
+      "timeout_response": "AA"
+    },
+    {
+      "id": "RL-004",
+      "byte": "0x04",
+      "name": "sendPacket",
+      "description": "Send RF packet (no listen)",
+      "request_format": "04 [channel:1] [repeatCount:1] [delayMS:1-2] [preambleMS:1?] [data...]",
+      "example_request": "040001050AA7208850730100",
+      "example_decoded": {
+        "channel": 0,
+        "repeat_count": 1,
+        "delay_ms": 5,
+        "preamble_ms": 10,
+        "data_hex": "A7208850730100"
+      },
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-005",
+      "byte": "0x05",
+      "name": "sendAndListen",
+      "description": "Send RF packet and listen for response",
+      "request_format": "05 [sendCh:1] [repeat:1] [delayMS:1] [listenCh:1] [timeoutMS:4BE] [retryCount:1] [preambleMS:1?] [data...]",
+      "example_request": "0500010500000001F40300A7208850730100",
+      "example_decoded": {
+        "send_channel": 0,
+        "repeat_count": 1,
+        "delay_ms": 5,
+        "listen_channel": 0,
+        "timeout_ms": 500,
+        "retry_count": 3,
+        "preamble_ms": 0,
+        "data_hex": "A7208850730100"
+      },
+      "response_format": "[responseCode][rssi:1][counter:1][data...]",
+      "success_response": "DD[rssi][counter][rfData]",
+      "timeout_response": "AA"
+    },
+    {
+      "id": "RL-006",
+      "byte": "0x06",
+      "name": "updateRegister",
+      "description": "Update CC111X radio register",
+      "request_format": "06 [registerAddr:1] [value:1]",
+      "example_request": "060D40",
+      "example_decoded": {"register": "freq2", "value": 64},
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-007",
+      "byte": "0x07",
+      "name": "reset",
+      "description": "Reset RileyLink device",
+      "request_format": "07",
+      "request_bytes": [7],
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-008",
+      "byte": "0x08",
+      "name": "setLEDMode",
+      "description": "Control LED behavior",
+      "request_format": "08 [ledType:1] [mode:1]",
+      "led_types": {"green": 0, "blue": 1},
+      "modes": {"off": 0, "on": 1, "auto": 2},
+      "example_request": "080102",
+      "example_decoded": {"led": "blue", "mode": "auto"},
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-009",
+      "byte": "0x09",
+      "name": "readRegister",
+      "description": "Read CC111X radio register",
+      "request_format": "09 [registerAddr:1]",
+      "example_request": "090D",
+      "example_decoded": {"register": "freq2"},
+      "response_format": "[responseCode][value:1]",
+      "example_response": "DD40"
+    },
+    {
+      "id": "RL-010",
+      "byte": "0x0A",
+      "name": "setModeRegisters",
+      "description": "Set TX/RX mode registers",
+      "request_format": "0A [modeType:1] [addr:1 value:1]...",
+      "mode_types": {"tx": 1, "rx": 2},
+      "example_request": "0A010D400E100F06",
+      "example_decoded": {
+        "mode": "tx",
+        "registers": [
+          {"addr": 13, "value": 64},
+          {"addr": 14, "value": 16},
+          {"addr": 15, "value": 6}
+        ]
+      },
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-011",
+      "byte": "0x0B",
+      "name": "setSWEncoding",
+      "description": "Set software encoding type",
+      "request_format": "0B [encodingType:1]",
+      "encoding_types": {"none": 0, "manchester": 1, "4b6b": 2},
+      "example_request": "0B02",
+      "example_decoded": {"encoding": "4b6b"},
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-012",
+      "byte": "0x0C",
+      "name": "setPreamble",
+      "description": "Set preamble duration",
+      "request_format": "0C [preambleMS:2BE]",
+      "example_request": "0C000A",
+      "example_decoded": {"preamble_ms": 10},
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-013",
+      "byte": "0x0D",
+      "name": "resetRadioConfig",
+      "description": "Reset radio to default configuration",
+      "request_format": "0D",
+      "request_bytes": [13],
+      "response_format": "[responseCode]",
+      "success_response": "DD"
+    },
+    {
+      "id": "RL-014",
+      "byte": "0x0E",
+      "name": "getStatistics",
+      "description": "Get device statistics",
+      "request_format": "0E",
+      "request_bytes": [14],
+      "response_format": "[responseCode][uptime:4][rxOverflow:2][rxFifoOverflow:2][packetRx:2][packetTx:2][crcFail:2][spiSyncFail:2]",
+      "example_response": "DD000000640000000000050003000000"
+    }
+  ],
+  
+  "response_codes": [
+    {"code": "0xDD", "value": 221, "name": "success", "description": "Command succeeded"},
+    {"code": "0xAA", "value": 170, "name": "rxTimeout", "description": "RF receive timeout"},
+    {"code": "0xBB", "value": 187, "name": "commandInterrupted", "description": "Operation interrupted"},
+    {"code": "0xCC", "value": 204, "name": "zeroData", "description": "No data received"},
+    {"code": "0x11", "value": 17, "name": "invalidParam", "description": "Invalid parameter"},
+    {"code": "0x22", "value": 34, "name": "unknownCommand", "description": "Unknown command"}
+  ],
+  
+  "cc111x_registers": {
+    "frequency": {
+      "freq0": {"addr": 11, "description": "Frequency control word, low byte"},
+      "freq1": {"addr": 12, "description": "Frequency control word, mid byte"},
+      "freq2": {"addr": 13, "description": "Frequency control word, high byte"}
+    },
+    "modulation": {
+      "mdmcfg0": {"addr": 16, "description": "Modem configuration 0"},
+      "mdmcfg1": {"addr": 17, "description": "Modem configuration 1"},
+      "mdmcfg2": {"addr": 18, "description": "Modem configuration 2"},
+      "mdmcfg3": {"addr": 19, "description": "Modem configuration 3"},
+      "mdmcfg4": {"addr": 20, "description": "Modem configuration 4"}
+    },
+    "power": {
+      "paTable0": {"addr": 46, "description": "Power amplifier table entry 0"}
+    }
+  },
+  
+  "frequency_calculation": {
+    "formula": "freq_hz = (freq2 << 16 | freq1 << 8 | freq0) * (24000000 / 65536)",
+    "medtronic_916_5_mhz": {
+      "freq2": 37,
+      "freq1": 16,
+      "freq0": 102,
+      "calculated_hz": 916500000
+    },
+    "eros_433_91_mhz": {
+      "freq2": 16,
+      "freq1": 178,
+      "freq0": 225,
+      "calculated_hz": 433910000
+    }
+  }
+}

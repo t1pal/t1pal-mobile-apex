@@ -1,0 +1,290 @@
+{
+  "_source": "NightscoutKit RemoteCommandManager + OTPValidation (T1Pal)",
+  "_task": "NS-SESSION-005",
+  "_description": "Remote command issuance flow with OTP verification",
+  "_format": {
+    "session": "Complete TX/RX sequence for secure remote commands",
+    "endpoints": {
+      "POST /api/v1/treatments": "Submit command as careportal treatment",
+      "GET /api/v1/treatments": "Poll for command acknowledgment"
+    },
+    "security": "OTP required for high-risk commands (bolus, override)",
+    "pattern": "Command → Poll for ACK → Verify execution"
+  },
+  "test_vectors": [
+    {
+      "id": "remote_bolus_command",
+      "description": "Issue remote bolus with OTP verification",
+      "steps": [
+        {
+          "step": 1,
+          "action": "generate_otp",
+          "description": "Client generates TOTP for command verification",
+          "secret": "JBSWY3DPEHPK3PXP",
+          "algorithm": "SHA1",
+          "digits": 6,
+          "period": 30,
+          "timestamp": 1739500800,
+          "otp": "123456"
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret",
+            "Content-Type": "application/json"
+          },
+          "body": [
+            {
+              "eventType": "Remote Bolus",
+              "created_at": "2026-02-14T02:00:00.000Z",
+              "enteredBy": "T1Pal Remote",
+              "notes": "Remote command",
+              "insulin": 2.0,
+              "isRemote": true,
+              "otp": "123456",
+              "identifier": "T1Pal:Remote Bolus:2026-02-14T02:00:00.000Z:abc123"
+            }
+          ]
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 1,
+            "command_id": "cmd_abc123"
+          }
+        },
+        {
+          "step": 4,
+          "action": "poll_ack",
+          "description": "Poll for command acknowledgment from device",
+          "poll_interval": 5000,
+          "max_polls": 12,
+          "timeout": 60000
+        },
+        {
+          "step": 5,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/treatments",
+          "query": "find[identifier]=T1Pal:Remote Bolus:2026-02-14T02:00:00.000Z:abc123"
+        },
+        {
+          "step": 6,
+          "direction": "rx",
+          "status": 200,
+          "body": [
+            {
+              "_id": "treat_xyz",
+              "eventType": "Remote Bolus",
+              "created_at": "2026-02-14T02:00:00.000Z",
+              "insulin": 2.0,
+              "isRemote": true,
+              "acknowledged": true,
+              "acknowledgedAt": "2026-02-14T02:00:15.000Z",
+              "acknowledgedBy": "Loop",
+              "status": "delivered"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote_carb_entry",
+      "description": "Issue remote carb entry (no OTP required)",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Remote Carbs",
+              "created_at": "2026-02-14T02:30:00.000Z",
+              "enteredBy": "T1Pal Remote",
+              "carbs": 30,
+              "absorptionTime": 180,
+              "isRemote": true,
+              "notes": "Lunch from caregiver app",
+              "identifier": "T1Pal:Remote Carbs:2026-02-14T02:30:00.000Z:def456"
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "remote_temporary_override",
+      "description": "Issue temporary override (OTP required)",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Temporary Override",
+              "created_at": "2026-02-14T03:00:00.000Z",
+              "enteredBy": "T1Pal Remote",
+              "reason": "Exercise",
+              "duration": 60,
+              "targetRange": {"low": 140, "high": 160},
+              "insulinSensitivityMultiplier": 1.5,
+              "isRemote": true,
+              "otp": "654321",
+              "identifier": "T1Pal:Temporary Override:2026-02-14T03:00:00.000Z:ghi789"
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "remote_command_rejected_invalid_otp",
+      "description": "Command rejected due to invalid OTP",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Remote Bolus",
+              "created_at": "2026-02-14T03:30:00.000Z",
+              "insulin": 5.0,
+              "isRemote": true,
+              "otp": "000000"
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 401,
+          "body": {
+            "status": 401,
+            "message": "Invalid OTP",
+            "error": "OTP verification failed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "remote_command_timeout",
+      "description": "Command sent but device does not acknowledge",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Remote Bolus",
+              "insulin": 1.5,
+              "otp": "789012",
+              "isRemote": true
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {"inserted": 1}
+        },
+        {
+          "step": 3,
+          "action": "poll_ack",
+          "polls": 12,
+          "result": "no_ack"
+        },
+        {
+          "step": 4,
+          "action": "expire",
+          "description": "Command marked as expired/undelivered",
+          "status": "expired",
+          "note": "User should be notified that command was not acknowledged"
+        }
+      ]
+    },
+    {
+      "id": "remote_cancel_temp_basal",
+      "description": "Cancel active temp basal remotely",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Cancel Temp Basal",
+              "created_at": "2026-02-14T04:00:00.000Z",
+              "enteredBy": "T1Pal Remote",
+              "isRemote": true,
+              "otp": "345678"
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {"inserted": 1}
+        }
+      ]
+    }
+  ],
+  "remote_command_types": {
+    "otp_required": [
+      "Remote Bolus",
+      "Remote Temp Basal",
+      "Temporary Override",
+      "Cancel Temp Basal",
+      "Suspend Pump",
+      "Resume Pump"
+    ],
+    "no_otp_required": [
+      "Remote Carbs",
+      "Note",
+      "Announcement"
+    ]
+  },
+  "command_status_values": [
+    "pending",
+    "acknowledged",
+    "delivered",
+    "failed",
+    "expired",
+    "cancelled"
+  ],
+  "otp_config": {
+    "algorithm": "SHA1",
+    "digits": 6,
+    "period": 30,
+    "window": 1,
+    "note": "Allow ±1 period for clock drift"
+  }
+}

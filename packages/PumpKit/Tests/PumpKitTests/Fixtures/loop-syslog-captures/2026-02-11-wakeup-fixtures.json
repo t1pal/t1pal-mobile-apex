@@ -1,0 +1,122 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T08:34:00Z",
+    "source": "Protocol documentation synthesis",
+    "type": "wakeup-command-fixture",
+    "references": [
+      "Loop PumpOpsSession.swift:112",
+      "externals/decoding-carelink/decocare/commands.py:PowerControl"
+    ],
+    "pump": {
+      "model": "Medtronic 515",
+      "serial": "208850"
+    },
+    "notes": "Wakeup (PowerControl) command patterns for conformance testing"
+  },
+  "protocol": {
+    "description": "Medtronic pumps put their RF receiver to sleep to conserve battery. Before sending commands, the pump must be woken up by repeatedly transmitting a wakeup packet.",
+    "timing": {
+      "typicalSleepTime": "30-60 seconds after last RF activity",
+      "wakeupDuration": "3-5 seconds of transmission",
+      "recommendedRepeatCount": "200-500",
+      "loopTimeout": "12 seconds"
+    }
+  },
+  "testCases": [
+    {
+      "name": "wakeup_2min",
+      "description": "Standard 2-minute wakeup (Loop default)",
+      "input": {
+        "durationMinutes": 2
+      },
+      "expected": {
+        "opcode": "0x5D",
+        "durationByte": "0x02",
+        "rawCommand": "A75D032F520200",
+        "notes": "Duration in minutes, second byte always 0x00"
+      },
+      "rileyLinkParams": {
+        "sendChannel": 0,
+        "repeatCount": 200,
+        "delayMs": 0,
+        "listenChannel": 0,
+        "timeoutMs": 12000,
+        "retry": 0,
+        "preambleExtension": 0
+      }
+    },
+    {
+      "name": "wakeup_1min",
+      "description": "Short 1-minute wakeup for quick operations",
+      "input": {
+        "durationMinutes": 1
+      },
+      "expected": {
+        "opcode": "0x5D",
+        "durationByte": "0x01",
+        "rawCommand": "A75D032F520100"
+      },
+      "rileyLinkParams": {
+        "sendChannel": 0,
+        "repeatCount": 100,
+        "delayMs": 0,
+        "listenChannel": 0,
+        "timeoutMs": 12000,
+        "retry": 0
+      }
+    },
+    {
+      "name": "wakeup_5min",
+      "description": "Extended 5-minute wakeup for history downloads",
+      "input": {
+        "durationMinutes": 5
+      },
+      "expected": {
+        "opcode": "0x5D",
+        "durationByte": "0x05",
+        "rawCommand": "A75D032F520500"
+      },
+      "rileyLinkParams": {
+        "sendChannel": 0,
+        "repeatCount": 500,
+        "delayMs": 0,
+        "listenChannel": 0,
+        "timeoutMs": 12000,
+        "retry": 0
+      }
+    }
+  ],
+  "responseFormat": {
+    "ack": {
+      "description": "Pump acknowledges wakeup",
+      "format": "A7 06 [serial] 5D 00",
+      "example": "A706032F525D00"
+    },
+    "noResponse": {
+      "description": "Pump was asleep - no ACK expected on first attempt",
+      "rileyLinkCode": "0xAA (rxTimeout)",
+      "notes": "This is normal - pump wakes after receiving enough RF energy"
+    }
+  },
+  "sendAndListenFormat": {
+    "description": "RileyLink SendAndListen command wrapping wakeup",
+    "v2Format": [
+      {"field": "opcode", "value": "0x05", "notes": "SendAndListen"},
+      {"field": "sendChannel", "value": "0x00", "notes": "Channel 0 for pump"},
+      {"field": "repeatCount", "value": "0xC8", "notes": "200 repeats"},
+      {"field": "delayMsHi", "value": "0x00"},
+      {"field": "delayMsLo", "value": "0x00"},
+      {"field": "listenChannel", "value": "0x00"},
+      {"field": "timeoutMsBytes", "value": "0x00002EE0", "notes": "12000ms BE"},
+      {"field": "retry", "value": "0x00"},
+      {"field": "preambleHi", "value": "0x55"},
+      {"field": "preambleLo", "value": "0x55"},
+      {"field": "rfData", "value": "[4b6b encoded wakeup packet]"}
+    ]
+  },
+  "loopReference": {
+    "file": "PumpOpsSession.swift",
+    "line": 112,
+    "code": "try session.setRileyLinkSendAndListenCommand(bytes: packet.txData(), repeatCount: 0xFF, delayBetweenPacketsMS: 0, preambleExtension: true, timeout: 12.seconds)"
+  }
+}

@@ -1,0 +1,440 @@
+{
+  "_source": "OmniKit TempBasalTests.swift (Loop/Trio)",
+  "_task": "EROS-SYNTH-005",
+  "_description": "Test vectors for OmniPod Eros temp basal commands (SetInsulinScheduleCommand + TempBasalExtraCommand)",
+  "_format": {
+    "SetInsulinScheduleCommand": {
+      "typeRaw": "0x1a",
+      "structure": "1a LL NNNNNNNN 01 CCCC HH SSSS PPPP [entries...]",
+      "fields": {
+        "LL": "length (1 byte)",
+        "NNNNNNNN": "nonce (4 bytes big-endian)",
+        "01": "temp basal delivery type marker",
+        "CCCC": "checksum (2 bytes)",
+        "HH": "half-hour segment count",
+        "SSSS": "seconds remaining << 3 (2 bytes, shifted left 3 bits)",
+        "PPPP": "first segment pulses (2 bytes)",
+        "entries": "InsulinTableEntry (2 bytes each): n=segments, a=alternateSegmentPulse, pp=pulses"
+      }
+    },
+    "TempBasalExtraCommand": {
+      "typeRaw": "0x16",
+      "structure": "16 LL RR MM NNNN XXXXXXXX [YYYY ZZZZZZZZ]...",
+      "fields": {
+        "LL": "length (1 byte)",
+        "RR": "beep options ((ack<<7) | (completion<<6) | (reminderMinutes & 0x3f))",
+        "MM": "reserved (always 0x00)",
+        "NNNN": "remaining pulses * 10 (2 bytes big-endian)",
+        "XXXXXXXX": "delay until first pulse in 0.01ms units (4 bytes big-endian)",
+        "YYYY": "total pulses * 10 for entry (2 bytes big-endian)",
+        "ZZZZZZZZ": "delay between pulses in 0.01ms units (4 bytes big-endian)"
+      }
+    },
+    "CancelDeliveryCommand": {
+      "typeRaw": "0x1f",
+      "structure": "1f LL NNNNNNNN TT",
+      "fields": {
+        "LL": "length (always 0x05)",
+        "NNNNNNNN": "nonce (4 bytes big-endian)",
+        "TT": "delivery type + beep type (0x02=tempBasal, 0x60=beeeeeep)"
+      }
+    },
+    "constants": {
+      "pulseSize": 0.05,
+      "pulsesPerUnit": 20,
+      "zeroBasalDelayHours": 5,
+      "zeroBasalDelayMs": 18000000,
+      "tempBasalTypeMarker": "0x01"
+    }
+  },
+  "set_insulin_schedule_vectors": [
+    {
+      "id": "tempbasal_0_05_30min",
+      "description": "0.05 U/hr for 30 minutes (alternating segment)",
+      "source": "TempBasalTests.swift testAlternatingSegmentFlag()",
+      "operation": "encode",
+      "hex": "1a0e9746c65b01007901384000000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x9746c65b",
+        "nonceDecimal": 2537997915,
+        "deliveryType": "tempBasal",
+        "rate": 0.05,
+        "durationHours": 0.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 0,
+        "tableEntries": [
+          {"segments": 1, "pulses": 0, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_0_05_8_5hr",
+      "description": "0.05 U/hr for 8.5 hours (with alternating pulse)",
+      "source": "TempBasalTests.swift testAlternatingSegmentFlag()",
+      "operation": "encode",
+      "hex": "1a109746c65b0100911138400000f8000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x9746c65b",
+        "deliveryType": "tempBasal",
+        "rate": 0.05,
+        "durationHours": 8.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 0,
+        "tableEntries": [
+          {"segments": 17, "pulses": 0, "alternateSegmentPulse": false},
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_0_05_16_5hr",
+      "description": "0.05 U/hr for 16.5 hours (long duration)",
+      "source": "TempBasalTests.swift testAlternatingSegmentFlag()",
+      "operation": "encode",
+      "hex": "1a129746c65b0100a92138400000f800f8000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x9746c65b",
+        "deliveryType": "tempBasal",
+        "rate": 0.05,
+        "durationHours": 16.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 0,
+        "tableEntries": [
+          {"segments": 33, "pulses": 0, "alternateSegmentPulse": false},
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true},
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_0_30_30min",
+      "description": "0.3 U/hr for 30 minutes",
+      "source": "TempBasalTests.swift testTempBasalThreeTenthsUnitPerHour()",
+      "operation": "encode",
+      "hex": "1a0eeac7941101007f01384000030003",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xeac79411",
+        "nonceDecimal": 3938948113,
+        "deliveryType": "tempBasal",
+        "rate": 0.3,
+        "durationHours": 0.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 3,
+        "tableEntries": [
+          {"segments": 1, "pulses": 3, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_0_20_30min",
+      "description": "0.2 U/hr for 30 minutes",
+      "source": "TempBasalTests.swift testSetTempBasalCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1a0eea2d0a3b01007d01384000020002",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xea2d0a3b",
+        "nonceDecimal": 3928820283,
+        "deliveryType": "tempBasal",
+        "rate": 0.2,
+        "durationHours": 0.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 2,
+        "tableEntries": [
+          {"segments": 1, "pulses": 2, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_0_05_2_5hr_alt",
+      "description": "0.05 U/hr for 2.5 hours (alternating pulse flag)",
+      "source": "TempBasalTests.swift testSetTempBasalWithAlternatingPulse()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1a0e4e2c271701007f05384000004800",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x4e2c2717",
+        "nonceDecimal": 1311516439,
+        "deliveryType": "tempBasal",
+        "rate": 0.05,
+        "durationHours": 2.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 0,
+        "tableEntries": [
+          {"segments": 5, "pulses": 0, "alternateSegmentPulse": true}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_2_00_1_5hr",
+      "description": "2.0 U/hr for 1.5 hours",
+      "source": "TempBasalTests.swift testLargerTempBasalCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1a0e87e8d03a0100cb03384000142014",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x87e8d03a",
+        "nonceDecimal": 2280181818,
+        "deliveryType": "tempBasal",
+        "rate": 2.0,
+        "durationHours": 1.5,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 20,
+        "tableEntries": [
+          {"segments": 3, "pulses": 20, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "tempbasal_30_00_12hr",
+      "description": "30 U/hr for 12 hours (extreme high rate)",
+      "source": "TempBasalTests.swift testTempBasalExtremeValues()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1a10a958c5ad0104f5183840012cf12c712c",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xa958c5ad",
+        "nonceDecimal": 2841167277,
+        "deliveryType": "tempBasal",
+        "rate": 30.0,
+        "durationHours": 12.0,
+        "secondsRemaining": 1800,
+        "firstSegmentPulses": 300,
+        "tableEntries": [
+          {"segments": 16, "pulses": 300, "alternateSegmentPulse": false},
+          {"segments": 8, "pulses": 300, "alternateSegmentPulse": false}
+        ]
+      }
+    }
+  ],
+  "temp_basal_extra_vectors": [
+    {
+      "id": "extra_zero_30min",
+      "description": "0 U/hr for 30 minutes (suspend)",
+      "source": "TempBasalTests.swift testZeroTempExtraCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "160e7c0000006b49d20000006b49d200",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 0.0,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "remainingPulses": 0.0,
+        "delayUntilFirstPulseMs": 18000000,
+        "delayUntilFirstPulseHours": 5.0,
+        "rateEntries": [
+          {"totalPulses": 0.0, "delayBetweenPulsesMs": 18000000, "durationMinutes": 30, "rate": 0.0}
+        ]
+      }
+    },
+    {
+      "id": "extra_zero_3hr",
+      "description": "0 U/hr for 3 hours (extended suspend)",
+      "source": "TempBasalTests.swift testZeroTempThreeHoursExtraCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "162c7c0000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d200",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 0.0,
+        "durationHours": 3.0,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "remainingPulses": 0.0,
+        "rateEntriesCount": 6
+      }
+    },
+    {
+      "id": "extra_zero_12hr",
+      "description": "0 U/hr for 12 hours (max suspend)",
+      "source": "TempBasalTests.swift testZeroTempTwelveHoursExtraCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "16987c0000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d20000006b49d200",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 0.0,
+        "durationHours": 12.0,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "remainingPulses": 0.0,
+        "rateEntriesCount": 24
+      }
+    },
+    {
+      "id": "extra_30_30min",
+      "description": "30 U/hr for 30 minutes (max rate short)",
+      "source": "TempBasalTests.swift testTempBasalExtraCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "160e7c000bb8000927c00bb8000927c0",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 30.0,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "remainingPulses": 300.0,
+        "delayUntilFirstPulseMs": 600000,
+        "delayUntilFirstPulseSeconds": 6.0,
+        "rateEntries": [
+          {"totalPulses": 300.0, "delayBetweenPulsesMs": 600000, "durationMinutes": 30, "rate": 30.0}
+        ]
+      }
+    },
+    {
+      "id": "extra_0_05_30min",
+      "description": "0.05 U/hr for 30 minutes (odd pulse count)",
+      "source": "TempBasalTests.swift testBasalExtraCommandForOddPulseCountRate()",
+      "operation": "encode",
+      "hex": "160e7c00000515752a00000515752a00",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 0.05,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60
+      }
+    },
+    {
+      "id": "extra_2_05_30min",
+      "description": "2.05 U/hr for 30 minutes (no completion beep)",
+      "source": "TempBasalTests.swift testBasalExtraCommandForOddPulseCountRate()",
+      "operation": "encode",
+      "hex": "160e3c0000cd0085fac700cd0085fac7",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 2.05,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 60
+      }
+    },
+    {
+      "id": "extra_2_10_30min",
+      "description": "2.10 U/hr for 30 minutes",
+      "source": "TempBasalTests.swift testBasalExtraCommandForOddPulseCountRate()",
+      "operation": "encode",
+      "hex": "160e3c0000d20082ca2400d20082ca24",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 2.10,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 60
+      }
+    },
+    {
+      "id": "extra_2_15_30min",
+      "description": "2.15 U/hr for 30 minutes",
+      "source": "TempBasalTests.swift testBasalExtraCommandForOddPulseCountRate()",
+      "operation": "encode",
+      "hex": "160e3c0000d7007fbf7d00d7007fbf7d",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 2.15,
+        "durationHours": 0.5,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 60
+      }
+    },
+    {
+      "id": "extra_27_35_12hr",
+      "description": "27.35 U/hr for 12 hours (pulse count edge case)",
+      "source": "TempBasalTests.swift testBasalExtraCommandPulseCount()",
+      "operation": "encode",
+      "hex": "16140000f5b9000a0ad7f5b9000a0ad70aaf000a0ad7",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 27.35,
+        "durationHours": 12.0,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 0
+      }
+    },
+    {
+      "id": "extra_30_12hr",
+      "description": "30 U/hr for 12 hours (extreme values)",
+      "source": "TempBasalTests.swift testTempBasalExtraCommandExtremeValues()",
+      "operation": "encodeDecodeBlock",
+      "hex": "16143c00f618000927c0f618000927c02328000927c0",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 30.0,
+        "durationHours": 12.0,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 60,
+        "remainingPulses": 6300.0,
+        "delayUntilFirstPulseSeconds": 6.0,
+        "rateEntriesCount": 2
+      }
+    },
+    {
+      "id": "extra_29_95_12hr",
+      "description": "29.95 U/hr for 12 hours (slightly under max)",
+      "source": "TempBasalTests.swift testTempBasalExtraCommandExtremeValues2()",
+      "operation": "encodeDecodeBlock",
+      "hex": "16143c00f5af00092ba9f5af00092ba9231900092ba9",
+      "expected": {
+        "type": "TempBasalExtraCommand",
+        "rate": 29.95,
+        "durationHours": 12.0,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 60,
+        "remainingPulses": 6289.5,
+        "delayUntilFirstPulseSeconds": 6.01001,
+        "rateEntriesCount": 2
+      }
+    }
+  ],
+  "cancel_temp_basal_vectors": [
+    {
+      "id": "cancel_tempbasal_beep",
+      "description": "Cancel temp basal with beep",
+      "source": "TempBasalTests.swift testCancelTempBasalCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1f05f76d34c462",
+      "expected": {
+        "type": "CancelDeliveryCommand",
+        "nonce": "0xf76d34c4",
+        "nonceDecimal": 4151129284,
+        "deliveryType": "tempBasal",
+        "beepType": "beeeeeep",
+        "beepTypeRaw": "0x62"
+      }
+    },
+    {
+      "id": "cancel_tempbasal_no_beep",
+      "description": "Cancel temp basal without beep",
+      "source": "TempBasalTests.swift testCancelTempBasalnoBeepCommand()",
+      "operation": "encodeDecodeBlock",
+      "hex": "1f05f76d34c402",
+      "expected": {
+        "type": "CancelDeliveryCommand",
+        "nonce": "0xf76d34c4",
+        "nonceDecimal": 4151129284,
+        "deliveryType": "tempBasal",
+        "beepType": "noBeepCancel",
+        "beepTypeRaw": "0x02"
+      }
+    }
+  ],
+  "python_compat": {
+    "description": "Python parsing helpers for temp basal commands",
+    "parse_set_insulin_schedule_tempbasal": "def parse_tempbasal_schedule(data: bytes) -> dict:\n    \"\"\"Parse SetInsulinScheduleCommand for temp basal.\"\"\"\n    if len(data) < 14 or data[0] != 0x1a:\n        raise ValueError('Invalid SetInsulinScheduleCommand')\n    \n    length = data[1]\n    nonce = int.from_bytes(data[2:6], 'big')\n    \n    if data[6] != 0x01:\n        raise ValueError('Not a temp basal delivery type (expected 0x01)')\n    \n    checksum = int.from_bytes(data[7:9], 'big')\n    half_hour_count = data[9]\n    seconds_remaining = int.from_bytes(data[10:12], 'big') >> 3\n    first_segment_pulses = int.from_bytes(data[12:14], 'big')\n    \n    # Parse table entries (2 bytes each)\n    entries = []\n    idx = 14\n    while idx + 1 < len(data):\n        entry = int.from_bytes(data[idx:idx+2], 'big')\n        segments = (entry >> 12) & 0xF\n        alternate = bool((entry >> 11) & 1)\n        pulses = entry & 0x7FF\n        entries.append({'segments': segments, 'alternate': alternate, 'pulses': pulses})\n        idx += 2\n    \n    return {\n        'nonce': hex(nonce),\n        'checksum': hex(checksum),\n        'halfHourCount': half_hour_count,\n        'secondsRemaining': seconds_remaining,\n        'firstSegmentPulses': first_segment_pulses,\n        'tableEntries': entries\n    }",
+    "parse_temp_basal_extra": "def parse_temp_basal_extra(data: bytes) -> dict:\n    \"\"\"Parse TempBasalExtraCommand.\"\"\"\n    if len(data) < 14 or data[0] != 0x16:\n        raise ValueError('Invalid TempBasalExtraCommand')\n    \n    length = data[1]\n    num_entries = (length - 8) // 6\n    \n    beep_options = data[2]\n    ack_beep = bool(beep_options & 0x80)\n    completion_beep = bool(beep_options & 0x40)\n    reminder_interval = beep_options & 0x3f\n    \n    remaining_pulses = int.from_bytes(data[4:6], 'big') / 10.0\n    delay_until_first = int.from_bytes(data[6:10], 'big')  # 0.01ms units\n    \n    entries = []\n    idx = 10\n    for _ in range(num_entries):\n        total_pulses = int.from_bytes(data[idx:idx+2], 'big') / 10.0\n        delay_between = int.from_bytes(data[idx+2:idx+6], 'big')\n        entries.append({'totalPulses': total_pulses, 'delayBetweenPulses': delay_between})\n        idx += 6\n    \n    return {\n        'acknowledgementBeep': ack_beep,\n        'completionBeep': completion_beep,\n        'programReminderInterval': reminder_interval,\n        'remainingPulses': remaining_pulses,\n        'delayUntilFirstPulseMs': delay_until_first,\n        'rateEntries': entries\n    }"
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "test_name": "bolus_command_formatting",
+  "description": "MDT-SYNTH-004: Test vectors for BolusCarelinkMessageBody TX formatting",
+  "reference": "MinimedKit BolusCarelinkMessageBody, decocare/commands.py Bolus",
+  "protocol": {
+    "opcode": "0x42",
+    "opcode_decimal": 66,
+    "description": "Set Bolus",
+    "body_format_scale40": "[0]=length (0x02), [1..2]=strokes (big-endian, *40 for units)",
+    "body_format_scale10": "[0]=length (0x01), [1]=strokes (*10 for units)",
+    "notes": "Scale 40 for x54+ pumps (0.025U resolution), Scale 10 for x22 pumps (0.1U resolution)"
+  },
+  "vectors": [
+    {
+      "name": "Loop Test Vector - 1.1U @ scale=40",
+      "source": "MinimedKitTests/Messages/BolusCarelinkMessageBodyTests.swift",
+      "full_message_hex": "a71234564202002C0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "address": "123456",
+      "opcode": "0x42",
+      "body_hex": "02 00 2C",
+      "body_length": 2,
+      "input_units": 1.1,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 44,
+      "strokes_hex": "00 2C",
+      "expected_delivered_units": 1.1,
+      "scroll_rate": 2,
+      "notes": "1.1U * 40/scrollRate(2) * 2 = 44 strokes. For 1 < units <= 10, scrollRate=2"
+    },
+    {
+      "name": "Loop Test Vector - 1.1U @ scale=10 (522 pump)",
+      "source": "MinimedKitTests/Messages/BolusCarelinkMessageBodyTests.swift",
+      "full_message_hex": "a712345642010B000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "address": "123456",
+      "opcode": "0x42",
+      "body_hex": "01 0B",
+      "body_length": 1,
+      "input_units": 1.1,
+      "insulin_bit_packing_scale": 10,
+      "strokes_raw": 11,
+      "strokes_hex": "0B",
+      "expected_delivered_units": 1.1,
+      "scroll_rate": 1,
+      "notes": "1.1U * 10 = 11 strokes. Scale=10 uses single byte, for x22 pumps"
+    },
+    {
+      "name": "Loop Test Vector - 1.475U @ scale=40 (Rounding)",
+      "source": "MinimedKitTests/Messages/BolusCarelinkMessageBodyTests.swift",
+      "full_message_hex": "a71234564202003A0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "address": "123456",
+      "opcode": "0x42",
+      "body_hex": "02 00 3A",
+      "body_length": 2,
+      "input_units": 1.475,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 58,
+      "strokes_hex": "00 3A",
+      "expected_delivered_units": 1.45,
+      "scroll_rate": 2,
+      "notes": "1.475 * 40/2 = 29.5, truncated to 29, * 2 = 58 strokes = 1.45U delivered"
+    },
+    {
+      "name": "Loop Test Vector - 7.9U @ scale=40 (Two Byte)",
+      "source": "MinimedKitTests/Messages/BolusCarelinkMessageBodyTests.swift",
+      "full_message_hex": "a71234564202013C0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "address": "123456",
+      "opcode": "0x42",
+      "body_hex": "02 01 3C",
+      "body_length": 2,
+      "input_units": 7.9,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 316,
+      "strokes_hex": "01 3C",
+      "expected_delivered_units": 7.9,
+      "scroll_rate": 2,
+      "notes": "7.9 * 40/2 = 158, * 2 = 316 strokes = 0x013C"
+    },
+    {
+      "name": "Loop Test Vector - 10.25U @ scale=40 (Greater Than 10)",
+      "source": "MinimedKitTests/Messages/BolusCarelinkMessageBodyTests.swift",
+      "full_message_hex": "a7123456420201980000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "address": "123456",
+      "opcode": "0x42",
+      "body_hex": "02 01 98",
+      "body_length": 2,
+      "input_units": 10.25,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 408,
+      "strokes_hex": "01 98",
+      "expected_delivered_units": 10.2,
+      "scroll_rate": 4,
+      "notes": "10.25 * 40/4 = 102.5, truncated to 102, * 4 = 408 strokes. For units > 10, scrollRate=4"
+    },
+    {
+      "name": "Synthesized - 0.5U @ scale=40 (Small Bolus)",
+      "source": "synthesized from protocol spec",
+      "body_hex": "02 00 14",
+      "body_length": 2,
+      "input_units": 0.5,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 20,
+      "strokes_hex": "00 14",
+      "expected_delivered_units": 0.5,
+      "scroll_rate": 1,
+      "notes": "0.5 * 40/1 = 20 strokes. For units <= 1, scrollRate=1"
+    },
+    {
+      "name": "Synthesized - 0.025U @ scale=40 (Minimum Bolus)",
+      "source": "synthesized from protocol spec",
+      "body_hex": "02 00 01",
+      "body_length": 2,
+      "input_units": 0.025,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 1,
+      "strokes_hex": "00 01",
+      "expected_delivered_units": 0.025,
+      "scroll_rate": 1,
+      "notes": "Minimum bolus for scale=40 is 1 stroke = 0.025U"
+    },
+    {
+      "name": "Synthesized - 25U @ scale=40 (Max Bolus)",
+      "source": "synthesized from protocol spec",
+      "body_hex": "02 03 E8",
+      "body_length": 2,
+      "input_units": 25.0,
+      "insulin_bit_packing_scale": 40,
+      "strokes_raw": 1000,
+      "strokes_hex": "03 E8",
+      "expected_delivered_units": 25.0,
+      "scroll_rate": 4,
+      "notes": "25 * 40/4 = 250, * 4 = 1000 strokes = 0x03E8 (typical max bolus)"
+    }
+  ],
+  "python_compat": {
+    "description": "Python formatting logic from MinimedKit/BolusCarelinkMessageBody.swift",
+    "code_scale40": "scroll_rate = 4 if units > 10 else (2 if units > 1 else 1)\nstrokes = int(units * (40 / scroll_rate)) * scroll_rate\ndata = bytes([0x02, strokes >> 8, strokes & 0xFF])",
+    "code_scale10": "strokes = int(units * 10)\ndata = bytes([0x01, strokes])"
+  },
+  "scroll_rate_mapping": {
+    "units <= 1": 1,
+    "1 < units <= 10": 2,
+    "units > 10": 4
+  },
+  "constants": {
+    "scale_x54_plus": 40,
+    "scale_x22": 10,
+    "min_bolus_scale40": 0.025,
+    "min_bolus_scale10": 0.1,
+    "max_bolus_typical": 25.0
+  }
+}

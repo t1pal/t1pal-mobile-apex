@@ -1,0 +1,263 @@
+{
+  "session_id": "SESSION-DASH-TIMEOUT-001",
+  "session_name": "Omnipod DASH Timeout Scenarios",
+  "description": "Synthesized timeout conditions for DASH BLE communication. Used for testing retry logic and timeout handling.",
+  "source": "Synthesized from OmnipodDashManager.swift and DASHFaultInjector.swift",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+  "trace": "DASH-FIX-013",
+  "created": "2026-02-16",
+
+  "timing_specs": {
+    "ble_scan_timeout_s": 30.0,
+    "ble_connect_timeout_s": 10.0,
+    "command_timeout_s": 10.0,
+    "pairing_timeout_s": 60.0,
+    "response_timeout_s": 5.0,
+    "retry_delay_ms": 500,
+    "max_command_retries": 3,
+    "source": "packages/PumpKit/Sources/PumpKit/OmnipodDashManager.swift"
+  },
+
+  "timeout_scenarios": [
+    {
+      "scenario_id": "TIMEOUT-001",
+      "name": "BLE scan timeout - no pod found",
+      "description": "No Omnipod DASH advertisement detected within scan window",
+      "trigger_state": "scanning",
+      "timeout_after_s": 30.0,
+      "fault_type": "bleScanTimeout",
+      "fault_code": null,
+      "error": {
+        "type": "PumpError.podNotFound",
+        "message": "No Omnipod DASH found within range",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "scanning → idle",
+        "callback": "onScanTimeout()",
+        "retry_strategy": "User-initiated rescan"
+      },
+      "test_setup": {
+        "mock_action": "Return empty scan results until timeout",
+        "mock_duration_s": 30.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-002",
+      "name": "BLE connection timeout",
+      "description": "Pod found but BLE connection fails to establish",
+      "trigger_state": "connecting",
+      "timeout_after_s": 10.0,
+      "fault_type": "bleConnectionTimeout",
+      "fault_code": null,
+      "error": {
+        "type": "PumpError.connectionFailed",
+        "message": "Failed to connect to pod",
+        "ble_error_code": "CBError.connectionTimeout",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onConnectionFailed(error:)",
+        "retry_strategy": "Automatic retry with backoff"
+      },
+      "test_setup": {
+        "mock_action": "Never call centralManager:didConnect:",
+        "mock_duration_s": 10.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-003",
+      "name": "Pairing timeout",
+      "description": "Pairing sequence not completed within time limit",
+      "trigger_state": "pairing",
+      "timeout_after_s": 60.0,
+      "fault_type": "pairingTimeout",
+      "fault_code": null,
+      "error": {
+        "type": "PumpError.pairingFailed",
+        "message": "Pairing timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "pairing → error",
+        "callback": "onPairingTimeout()",
+        "retry_strategy": "User restarts pairing"
+      },
+      "test_setup": {
+        "mock_action": "Start pairing but never send confirmation",
+        "mock_duration_s": 60.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-004",
+      "name": "Command response timeout",
+      "description": "No response to pod command within timeout window",
+      "trigger_state": "commanding",
+      "timeout_after_s": 5.0,
+      "fault_type": "bleRetryTimeout",
+      "fault_code": "0xA0",
+      "tx_sent": {
+        "command": "GetStatusCommand (0x0e)",
+        "description": "Status request sent, awaiting response"
+      },
+      "error": {
+        "type": "PumpError.commandTimeout",
+        "message": "Command timed out waiting for response",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "commanding → retry or error",
+        "callback": "onCommandTimeout(command:)",
+        "retry_strategy": "Retry up to max_command_retries times"
+      },
+      "test_setup": {
+        "mock_action": "Write command, never send notification response",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-005",
+      "name": "Bolus delivery response timeout",
+      "description": "No confirmation after bolus command",
+      "trigger_state": "bolusing",
+      "timeout_after_s": 10.0,
+      "fault_type": "bleRetryTimeout",
+      "fault_code": "0xA0",
+      "tx_sent": {
+        "command": "SetInsulinScheduleCommand (0x1a)",
+        "description": "Bolus command sent, awaiting confirmation"
+      },
+      "error": {
+        "type": "PumpError.bolusConfirmationTimeout",
+        "message": "Bolus confirmation timed out - check pod status",
+        "recoverable": true,
+        "requires_status_check": true
+      },
+      "expected_behavior": {
+        "state_transition": "bolusing → uncertain",
+        "callback": "onBolusUncertain()",
+        "user_action_required": "Check pod status manually",
+        "retry_strategy": "DO NOT retry bolus without status check"
+      },
+      "test_setup": {
+        "mock_action": "Send bolus command, never send StatusResponse"
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-006",
+      "name": "BLE ping timeout",
+      "description": "Pod not responding to keep-alive pings",
+      "trigger_state": "connected",
+      "timeout_after_s": 30.0,
+      "fault_type": "blePingTimeout",
+      "fault_code": "0xA9",
+      "error": {
+        "type": "PumpError.communicationLost",
+        "message": "Lost communication with pod",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connected → disconnected",
+        "callback": "onCommunicationLost()",
+        "retry_strategy": "Attempt reconnection"
+      },
+      "test_setup": {
+        "mock_action": "Stop responding to keep-alive commands"
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-007",
+      "name": "Encryption handshake timeout",
+      "description": "EAP-AKA key exchange not completed",
+      "trigger_state": "encrypting",
+      "timeout_after_s": 10.0,
+      "fault_type": "pairingKeyExchangeFailed",
+      "fault_code": null,
+      "error": {
+        "type": "PumpError.encryptionFailed",
+        "message": "Encryption handshake timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "encrypting → error",
+        "callback": "onEncryptionFailed()",
+        "retry_strategy": "Disconnect and reconnect"
+      },
+      "test_setup": {
+        "mock_action": "Start EAP-AKA but never complete confirmation"
+      }
+    }
+  ],
+
+  "retry_configuration": {
+    "max_scan_retries": 3,
+    "max_connection_retries": 3,
+    "max_command_retries": 3,
+    "max_pairing_retries": 2,
+    "retry_delay_ms": 500,
+    "exponential_backoff": true,
+    "backoff_multiplier": 2.0,
+    "max_backoff_ms": 5000,
+    "source": "packages/PumpKit/Sources/PumpKit/OmnipodDashManager.swift"
+  },
+
+  "test_vectors": [
+    {
+      "name": "Timeout error construction",
+      "scenario": "TIMEOUT-004",
+      "expected_error_code": "commandTimeout",
+      "expected_message": "Command timed out waiting for response"
+    },
+    {
+      "name": "State machine on timeout",
+      "initial_state": "commanding",
+      "timeout_event": "response_timeout",
+      "expected_state": "error",
+      "cleanup_actions": ["cancelPendingWrite", "logTimeout"]
+    },
+    {
+      "name": "Retry count tracking",
+      "scenario": "TIMEOUT-002",
+      "retry_sequence": [
+        { "attempt": 1, "result": "timeout", "delay_before_next_ms": 500 },
+        { "attempt": 2, "result": "timeout", "delay_before_next_ms": 1000 },
+        { "attempt": 3, "result": "timeout", "delay_before_next_ms": null }
+      ],
+      "final_state": "error",
+      "final_error": "PumpError.connectionFailed(retries: 3)"
+    },
+    {
+      "name": "Bolus uncertainty handling",
+      "scenario": "TIMEOUT-005",
+      "initial_insulin_delivered": 1.5,
+      "command_sent": "bolus 2.0U",
+      "timeout_occurred": true,
+      "expected_actions": [
+        "Mark delivery as uncertain",
+        "Do NOT retry bolus",
+        "Prompt user to check pod",
+        "Fetch GetStatus on next opportunity"
+      ]
+    }
+  ],
+
+  "edge_cases": [
+    {
+      "name": "Timeout during active bolus",
+      "description": "Communication lost while bolus is in progress",
+      "handling": "Mark bolus as uncertain, DO NOT cancel, check status when reconnected"
+    },
+    {
+      "name": "Timeout during temp basal",
+      "description": "Lost contact while setting temp basal",
+      "handling": "Mark uncertain, check status, may need to cancel and retry"
+    },
+    {
+      "name": "Multiple simultaneous timeouts",
+      "description": "Both command and ping timeout at same time",
+      "handling": "Handle command timeout first, then attempt reconnection"
+    }
+  ]
+}

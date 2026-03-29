@@ -1,0 +1,71 @@
+{
+  "_source": "G7SensorKit ExtendedVersionMessageTests.swift (Loop/Trio)",
+  "_task": "G7-SYNTH-003",
+  "_description": "Test vectors for ExtendedVersionMessage parsing (G7 sensor version info)",
+  "_format": {
+    "name": "ExtendedVersionMessage (Loop-compatible)",
+    "opcode": "0x52",
+    "bytes[0]": "opcode (0x52 = extendedVersionTx)",
+    "bytes[1]": "reserved (0x00)",
+    "bytes[2-5]": "sessionLength (UInt32 LE, seconds)",
+    "bytes[6-7]": "warmupDuration (UInt16 LE, seconds)",
+    "bytes[8-11]": "algorithmVersion (UInt32 LE)",
+    "bytes[12]": "hardwareVersion (UInt8)",
+    "bytes[13-14]": "maxLifetimeDays (UInt16 LE)"
+  },
+  "version_vectors": [
+    {
+      "id": "10_day_sensor",
+      "description": "Standard 10-day G7 sensor",
+      "source": "ExtendedVersionMessageTests.swift testBasicMessage()",
+      "hex": "5200c0d70d00540600020404ff0c00",
+      "expected": {
+        "sessionLengthSeconds": 907200,
+        "sessionLengthDays": 10.5,
+        "warmupDurationSeconds": 1620,
+        "warmupDurationMinutes": 27,
+        "algorithmVersion": 67371520,
+        "hardwareVersion": 255,
+        "maxLifetimeDays": 12
+      },
+      "notes": "10-day sensor with 12-day max lifetime (allows 1.5 days post-expiration readings)"
+    },
+    {
+      "id": "15_day_sensor",
+      "description": "Extended 15-day G7+ sensor (G7 Stelo/extended wear)",
+      "source": "ExtendedVersionMessageTests.swift test15DayMessage()",
+      "hex": "5200406f1400880e00010a04ff1100",
+      "expected": {
+        "sessionLengthSeconds": 1339200,
+        "sessionLengthDays": 15.5,
+        "warmupDurationSeconds": 3720,
+        "warmupDurationMinutes": 62,
+        "algorithmVersion": 67764480,
+        "hardwareVersion": 255,
+        "maxLifetimeDays": 17
+      },
+      "notes": "15-day extended wear sensor (Stelo variant) with longer warmup and 17-day max lifetime"
+    }
+  ],
+  "python_compat": {
+    "description": "Python parsing logic for G7 ExtendedVersionMessage",
+    "code": "import struct\n\ndef parse_g7_extended_version(data: bytes) -> dict:\n    \"\"\"Parse G7 ExtendedVersionMessage from raw bytes.\n    \n    Format (15 bytes):\n        [0]:    opcode (0x52)\n        [1]:    reserved\n        [2:6]:  sessionLength (UInt32 LE, seconds)\n        [6:8]:  warmupDuration (UInt16 LE, seconds)\n        [8:12]: algorithmVersion (UInt32 LE)\n        [12]:   hardwareVersion (UInt8)\n        [13:15]: maxLifetimeDays (UInt16 LE)\n    \"\"\"\n    if len(data) < 15:\n        return None\n    if data[0] != 0x52:\n        return None\n    \n    session_length = struct.unpack('<I', data[2:6])[0]\n    warmup_duration = struct.unpack('<H', data[6:8])[0]\n    algorithm_version = struct.unpack('<I', data[8:12])[0]\n    hardware_version = data[12]\n    max_lifetime_days = struct.unpack('<H', data[13:15])[0]\n    \n    return {\n        'sessionLengthSeconds': session_length,\n        'sessionLengthDays': session_length / 86400.0,\n        'warmupDurationSeconds': warmup_duration,\n        'warmupDurationMinutes': warmup_duration / 60.0,\n        'algorithmVersion': algorithm_version,\n        'hardwareVersion': hardware_version,\n        'maxLifetimeDays': max_lifetime_days\n    }"
+  },
+  "sensor_variants": {
+    "description": "Known G7 sensor variants based on sessionLength",
+    "variants": [
+      {
+        "name": "G7 Standard",
+        "sessionLengthDays": 10.5,
+        "warmupMinutes": 27,
+        "maxLifetimeDays": 12
+      },
+      {
+        "name": "G7 Stelo / Extended",
+        "sessionLengthDays": 15.5,
+        "warmupMinutes": 62,
+        "maxLifetimeDays": 17
+      }
+    ]
+  }
+}

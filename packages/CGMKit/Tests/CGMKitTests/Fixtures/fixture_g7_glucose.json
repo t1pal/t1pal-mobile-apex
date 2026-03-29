@@ -1,0 +1,249 @@
+{
+  "_source": "G7SensorKit G7GlucoseMessageTests.swift (Loop/Trio)",
+  "_task": "G7-SYNTH-001",
+  "_description": "Test vectors for G7GlucoseMessage and G7BackfillMessage parsing",
+  "_format": {
+    "name": "G7GlucoseMessage (Loop-compatible)",
+    "opcode": "0x4E",
+    "bytes[0]": "opcode (0x4E)",
+    "bytes[1]": "reserved",
+    "bytes[2-5]": "messageTimestamp (UInt32 LE, sensor time in seconds)",
+    "bytes[6-7]": "sequence (UInt16 LE)",
+    "bytes[8]": "reserved",
+    "bytes[9]": "session indicator (1 = active)",
+    "bytes[10-11]": "age (UInt16 LE, seconds since reading)",
+    "bytes[12-13]": "glucose (UInt16 LE, mg/dL, 0xFFFF = invalid)",
+    "bytes[14]": "algorithmState (0x06=ok, 0x02=warmup, 0x01=stopped, 0x18=expired)",
+    "bytes[15]": "trend (Int8 signed, rate * 10, 0x7F = missing)",
+    "bytes[16-17]": "predicted (UInt16 LE, 0xFFFF = not available)",
+    "bytes[18]": "condition (flags, bit 4 = displayOnly)"
+  },
+  "glucose_vectors": [
+    {
+      "id": "basic_reading",
+      "description": "Basic glucose reading 138 mg/dL",
+      "source": "G7GlucoseMessageTests.swift testG7MessageData()",
+      "hex": "4e00c35501002601000106008a00060187000f",
+      "expected": {
+        "glucose": 138,
+        "glucoseTimestamp": 87485,
+        "glucoseIsDisplayOnly": false
+      }
+    },
+    {
+      "id": "calibration_display_only",
+      "description": "Reading marked as display-only (calibration in progress)",
+      "source": "G7GlucoseMessageTests.swift testG7MessageDataWithCalibration()",
+      "hex": "4e000ec10d00c00b00010000680006fe63001f",
+      "expected": {
+        "glucose": 104,
+        "glucoseTimestamp": 901390,
+        "glucoseIsDisplayOnly": true
+      }
+    },
+    {
+      "id": "detailed_reading",
+      "description": "Detailed reading with age, sequence, trend, predicted",
+      "source": "G7GlucoseMessageTests.swift testG7MessageDataDetails()",
+      "hex": "4e00a89c00008800000104008d0006038a000f",
+      "expected": {
+        "glucose": 141,
+        "glucoseTimestamp": 40100,
+        "sequence": 136,
+        "age": 4,
+        "predicted": 138,
+        "trend": 0.3,
+        "algorithmState": "ok"
+      }
+    },
+    {
+      "id": "negative_trend",
+      "description": "Negative trend rate (-0.2 mg/dL/min)",
+      "source": "G7GlucoseMessageTests.swift testG7MessageDataNegativeRate()",
+      "hex": "4e00c6cc0d00ca0b00010500610006fe5b000f",
+      "expected": {
+        "glucose": 97,
+        "trend": -0.2
+      }
+    },
+    {
+      "id": "missing_trend",
+      "description": "Missing trend (0x7F = not available)",
+      "source": "G7GlucoseMessageTests.swift testG7MessageDataMissingRate()",
+      "hex": "4e00c6cc0d00ca0b000105006100067f5b000f",
+      "expected": {
+        "glucose": 97,
+        "trend": null
+      }
+    },
+    {
+      "id": "two_byte_age",
+      "description": "Age field using full 16-bit range",
+      "source": "G7GlucoseMessageTests.swift testTwoByteAge()",
+      "hex": "4e00f9590200030200012a018f000610d9000f",
+      "expected": {
+        "age": 298,
+        "messageTimestamp": 154105,
+        "glucoseTimestamp": 153807
+      }
+    },
+    {
+      "id": "expired_sensor_large_age",
+      "description": "Expired sensor with large age (7 hours after expiration)",
+      "source": "G7GlucoseMessageTests.swift testTwoByteAgeOnExpiredSensor()",
+      "hex": "4e004d440e00d40b0001d46b650018036a000e",
+      "expected": {
+        "age": 27604,
+        "messageTimestamp": 934989,
+        "glucoseTimestamp": 907385,
+        "algorithmState": "expired"
+      }
+    }
+  ],
+  "lifecycle_vectors": [
+    {
+      "id": "lifecycle_0_stopped",
+      "description": "Sensor stopped state",
+      "source": "G7GlucoseMessageTests.swift testG7MessageDataLifecycle()",
+      "hex": "4e00b6000000010000006600ffff017fffff00",
+      "expected": {
+        "glucose": null,
+        "algorithmState": "stopped",
+        "sequence": 1,
+        "glucoseTimestamp": 80
+      }
+    },
+    {
+      "id": "lifecycle_1_warmup",
+      "description": "Sensor warmup state (no glucose yet)",
+      "hex": "4e00cd000000030000010500ffff027fffff01",
+      "expected": {
+        "glucose": null,
+        "algorithmState": "warmup",
+        "sequence": 3,
+        "glucoseTimestamp": 200
+      }
+    },
+    {
+      "id": "lifecycle_2_warmup_glucose",
+      "description": "Warmup with first glucose value 145",
+      "hex": "4e00f90100000400000105009100027effff02",
+      "expected": {
+        "glucose": 145,
+        "algorithmState": "warmup",
+        "sequence": 4,
+        "glucoseTimestamp": 500
+      }
+    },
+    {
+      "id": "lifecycle_3_warmup",
+      "hex": "4e00250300000500000105007d00027effff02",
+      "expected": {
+        "glucose": 125,
+        "algorithmState": "warmup",
+        "sequence": 5,
+        "glucoseTimestamp": 800
+      }
+    },
+    {
+      "id": "lifecycle_4_warmup",
+      "hex": "4e0051040000060000010500650002dfffff02",
+      "expected": {
+        "glucose": 101,
+        "algorithmState": "warmup",
+        "sequence": 6,
+        "glucoseTimestamp": 1100
+      }
+    },
+    {
+      "id": "lifecycle_5_warmup",
+      "hex": "4e007d0500000700000105004e0002e7ffff02",
+      "expected": {
+        "glucose": 78,
+        "algorithmState": "warmup",
+        "sequence": 7,
+        "glucoseTimestamp": 1400
+      }
+    },
+    {
+      "id": "lifecycle_6_ok",
+      "description": "First OK state - ready for readings",
+      "hex": "4e00ab060000080000010700540006f5ffff0e",
+      "expected": {
+        "glucose": 84,
+        "algorithmState": "ok",
+        "sequence": 8,
+        "glucoseTimestamp": 1700
+      }
+    },
+    {
+      "id": "lifecycle_7_ok",
+      "hex": "4e00d507000009000001050061000601ffff0e",
+      "expected": {
+        "glucose": 97,
+        "algorithmState": "ok",
+        "sequence": 9,
+        "glucoseTimestamp": 2000
+      }
+    },
+    {
+      "id": "lifecycle_8_expired",
+      "description": "Sensor expired after 10.5 days",
+      "hex": "4e004d440e00d40b0001d46b650018036a000e",
+      "expected": {
+        "glucose": 101,
+        "algorithmState": "expired",
+        "sequence": 3028,
+        "glucoseTimestamp": 907385
+      }
+    }
+  ],
+  "backfill_vectors": [
+    {
+      "id": "backfill_basic",
+      "description": "Basic backfill reading",
+      "source": "G7GlucoseMessageTests.swift testBackfill()",
+      "hex": "cf5802008f00060f10",
+      "expected": {
+        "timestamp": 153807,
+        "glucose": 143,
+        "algorithmState": "ok",
+        "condition": null,
+        "glucoseIsDisplayOnly": false,
+        "hasReliableGlucose": true
+      }
+    },
+    {
+      "id": "backfill_high_timestamp",
+      "description": "Backfill with high timestamp byte",
+      "source": "G7GlucoseMessageTests.swift testBackfillTimestampWithHighByte()",
+      "hex": "f20e0d00ba00060ffb",
+      "expected": {
+        "timestamp": 855794,
+        "glucose": 186
+      }
+    },
+    {
+      "id": "backfill_calibration",
+      "description": "Backfill marked as display-only (calibration)",
+      "source": "G7GlucoseMessageTests.swift testBackfillCalibration()",
+      "hex": "f63d00008500061efe",
+      "expected": {
+        "glucoseIsDisplayOnly": true,
+        "glucose": 133
+      }
+    }
+  ],
+  "algorithm_states": {
+    "0x01": "stopped",
+    "0x02": "warmup",
+    "0x03": "excessNoise",
+    "0x04": "sensorFailed",
+    "0x06": "ok",
+    "0x18": "expired"
+  },
+  "python_compat": {
+    "description": "Python parsing logic for G7 glucose messages",
+    "code": "import struct\n\ndef parse_g7_glucose(data: bytes) -> dict:\n    if len(data) < 19 or data[0] != 0x4E:\n        return None\n    msg_ts = struct.unpack('<I', data[2:6])[0]\n    seq = struct.unpack('<H', data[6:8])[0]\n    age = struct.unpack('<H', data[10:12])[0]\n    glucose_raw = struct.unpack('<H', data[12:14])[0]\n    glucose = glucose_raw if glucose_raw > 0 and glucose_raw != 0xFFFF else None\n    algo_state = data[14]\n    trend_raw = struct.unpack('b', bytes([data[15]]))[0]\n    trend = trend_raw / 10.0 if trend_raw != 0x7F else None\n    predicted = struct.unpack('<H', data[16:18])[0]\n    predicted = predicted if predicted != 0xFFFF else None\n    condition = data[18]\n    return {\n        'messageTimestamp': msg_ts,\n        'glucoseTimestamp': msg_ts - age,\n        'sequence': seq,\n        'age': age,\n        'glucose': glucose,\n        'algorithmState': algo_state,\n        'trend': trend,\n        'predicted': predicted,\n        'glucoseIsDisplayOnly': (condition & 0x10) != 0\n    }\n\ndef parse_g7_backfill(data: bytes) -> dict:\n    if len(data) < 9:\n        return None\n    ts_bytes = data[0:3] + b'\\x00'\n    timestamp = struct.unpack('<I', ts_bytes)[0]\n    glucose = struct.unpack('<H', data[3:5])[0]\n    algo_state = data[5]\n    trend_raw = struct.unpack('b', bytes([data[6]]))[0]\n    trend = trend_raw / 10.0 if trend_raw != 0x7F else None\n    condition = data[8]\n    return {\n        'timestamp': timestamp,\n        'glucose': glucose,\n        'algorithmState': algo_state,\n        'trend': trend,\n        'glucoseIsDisplayOnly': (condition & 0x10) != 0,\n        'hasReliableGlucose': algo_state == 0x06\n    }"
+  }
+}

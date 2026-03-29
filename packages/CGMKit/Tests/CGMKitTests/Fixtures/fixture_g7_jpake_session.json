@@ -1,0 +1,286 @@
+{
+  "session_id": "SESSION-G7-001e",
+  "session_name": "Dexcom G7 J-PAKE Complete Session",
+  "description": "End-to-end J-PAKE authentication session fixture. Combines Round 1, Round 2, and Key Confirmation phases into a complete authentication flow. This fixture validates the full state machine from idle → authenticated.",
+  "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+  "references": [
+    "conformance/protocol/dexcom/fixture_g7_jpake_r1.json",
+    "conformance/protocol/dexcom/fixture_g7_jpake_r2.json",
+    "conformance/protocol/dexcom/fixture_g7_jpake_confirm.json",
+    "docs/research/JPAKE-REFERENCE-ANALYSIS.md",
+    "docs/research/XDRIP-G7-JPAKE-REFERENCE.md"
+  ],
+  "timestamp": "2026-02-13T11:45:00Z",
+  "schema_version": "1.0.0",
+
+  "protocol_overview": {
+    "name": "J-PAKE (RFC 8236) - Complete Session",
+    "curve": "P-256 (secp256r1)",
+    "password": "4-digit sensor code",
+    "purpose": "Password-authenticated key exchange establishing shared session key",
+    "phases": ["Round 1", "Round 2", "Key Confirmation"],
+    "total_messages": 6,
+    "message_pattern": "TX-RX for each phase"
+  },
+
+  "state_machine": {
+    "initial": "idle",
+    "final": "authenticated",
+    "transitions": [
+      { "from": "idle", "to": "awaitingRound1Response", "trigger": "startAuthentication()", "message": "Round1TX" },
+      { "from": "awaitingRound1Response", "to": "awaitingRound2Response", "trigger": "processRound1Response()", "message": "Round2TX" },
+      { "from": "awaitingRound2Response", "to": "awaitingConfirmation", "trigger": "processRound2Response()", "message": "ConfirmTX" },
+      { "from": "awaitingConfirmation", "to": "authenticated", "trigger": "processConfirmation()", "message": null },
+      { "from": "awaitingConfirmation", "to": "failed", "trigger": "processConfirmation() mismatch", "message": null }
+    ],
+    "state_diagram": "idle → awaitingRound1Response → awaitingRound2Response → awaitingConfirmation → authenticated"
+  },
+
+  "session_parameters": {
+    "sensor_code": "1234",
+    "sensor_code_utf8_hex": "31323334",
+    "client_party_id_hex": "36C69656E647",
+    "server_party_id_hex": "375627675627"
+  },
+
+  "message_flow": [
+    {
+      "sequence": 1,
+      "phase": "Round 1",
+      "direction": "TX",
+      "state_before": "idle",
+      "state_after": "awaitingRound1Response",
+      "message": {
+        "opcode": "0x02",
+        "opcode_name": "AuthRound1",
+        "format": "[opcode:1] + [gx1:32] + [gx2:32] + [zkp1:80] + [zkp2:80]",
+        "total_length": 225,
+        "description": "Client sends g^x1, g^x2 with zero-knowledge proofs"
+      }
+    },
+    {
+      "sequence": 2,
+      "phase": "Round 1",
+      "direction": "RX",
+      "state_before": "awaitingRound1Response",
+      "state_after": "awaitingRound2Response",
+      "message": {
+        "opcode": "0x02",
+        "opcode_name": "AuthRound1",
+        "format": "[opcode:1] + [gx3:32] + [gx4:32] + [zkp3:80] + [zkp4:80]",
+        "total_length": 225,
+        "description": "Sensor responds with g^x3, g^x4 with zero-knowledge proofs"
+      }
+    },
+    {
+      "sequence": 3,
+      "phase": "Round 2",
+      "direction": "TX",
+      "state_before": "awaitingRound1Response",
+      "state_after": "awaitingRound2Response",
+      "message": {
+        "opcode": "0x03",
+        "opcode_name": "AuthRound2",
+        "format": "[opcode:1] + [A:32] + [zkpA:80]",
+        "total_length": 113,
+        "description": "Client sends A = (g^x1 + g^x3 + g^x4)^(x2 * s) with ZKP",
+        "computation": "GA = g^x1 + g^x3 + g^x4; x2s = x2 * s mod n; A = GA^x2s"
+      }
+    },
+    {
+      "sequence": 4,
+      "phase": "Round 2",
+      "direction": "RX",
+      "state_before": "awaitingRound2Response",
+      "state_after": "awaitingConfirmation",
+      "message": {
+        "opcode": "0x03",
+        "opcode_name": "AuthRound2",
+        "format": "[opcode:1] + [B:32] + [zkpB:80]",
+        "total_length": 113,
+        "description": "Sensor responds with B = (g^x3 + g^x1 + g^x2)^(x4 * s) with ZKP",
+        "computation": "GB = g^x3 + g^x1 + g^x2; x4s = x4 * s mod n; B = GB^x4s"
+      }
+    },
+    {
+      "sequence": 5,
+      "phase": "Key Confirmation",
+      "direction": "TX",
+      "state_before": "awaitingRound2Response",
+      "state_after": "awaitingConfirmation",
+      "message": {
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "format": "[opcode:1] + [confirmHash:16]",
+        "total_length": 17,
+        "description": "Client sends confirmation hash proving shared key derivation"
+      }
+    },
+    {
+      "sequence": 6,
+      "phase": "Key Confirmation",
+      "direction": "RX",
+      "state_before": "awaitingConfirmation",
+      "state_after": "authenticated",
+      "message": {
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "format": "[opcode:1] + [confirmHash:16]",
+        "total_length": 17,
+        "description": "Sensor responds with its confirmation hash"
+      }
+    }
+  ],
+
+  "shared_key_derivation": {
+    "description": "Final shared key computation after Round 2",
+    "formula": "K = SHA256((B - g^(x4*x2*s))^x2).X",
+    "key_length": 32,
+    "truncated_length": 16,
+    "algorithm": "SHA256 full output; AES-128 uses first 16 bytes"
+  },
+
+  "test_vectors": [
+    {
+      "id": "JPAKE-SESSION-001",
+      "name": "Complete session state machine",
+      "description": "Verify complete state transition sequence from idle to authenticated",
+      "expected_states": ["idle", "awaitingRound1Response", "awaitingRound2Response", "awaitingConfirmation", "authenticated"],
+      "assertions": [
+        { "after": "startAuthentication()", "state": "awaitingRound1Response" },
+        { "after": "processRound1Response()", "state": "awaitingRound2Response" },
+        { "after": "processRound2Response()", "state": "awaitingConfirmation" },
+        { "after": "processConfirmation()", "state": "authenticated" }
+      ]
+    },
+    {
+      "id": "JPAKE-SESSION-002",
+      "name": "Session produces all required messages",
+      "description": "Verify each phase produces correct TX message",
+      "assertions": [
+        { "phase": "Round1", "produces": "Round1TX", "opcode": "0x02", "length": 225 },
+        { "phase": "Round2", "produces": "Round2TX", "opcode": "0x03", "length": 113 },
+        { "phase": "Confirm", "produces": "ConfirmTX", "opcode": "0x04", "length": 17 }
+      ]
+    },
+    {
+      "id": "JPAKE-SESSION-003",
+      "name": "Session key available after Round 2",
+      "description": "Verify session key is derived before confirmation exchange",
+      "assertions": [
+        { "after": "processRound2Response()", "sessionKey": "notNil" },
+        { "field": "sessionKey.count", "equals": 16 }
+      ]
+    },
+    {
+      "id": "JPAKE-SESSION-004",
+      "name": "Failed confirmation produces failed state",
+      "description": "Wrong confirmation hash transitions to failed state",
+      "input": "wrong confirmHash",
+      "expected_state": "failed",
+      "expected_error": "confirmationFailed"
+    },
+    {
+      "id": "JPAKE-SESSION-005",
+      "name": "Same password produces successful auth",
+      "description": "Both parties with same password derive same key",
+      "preconditions": ["Same sensor code on both parties"],
+      "expected_result": "authenticated"
+    },
+    {
+      "id": "JPAKE-SESSION-006",
+      "name": "Different password produces auth failure",
+      "description": "Mismatched passwords cause confirmation failure",
+      "preconditions": ["Different sensor codes"],
+      "expected_result": "failed",
+      "expected_error": "confirmationFailed"
+    },
+    {
+      "id": "JPAKE-SESSION-007",
+      "name": "Session is reusable after reset",
+      "description": "Authenticator can be reset and reused",
+      "sequence": ["complete auth", "reset()", "complete auth again"],
+      "expected_result": "authenticated"
+    },
+    {
+      "id": "JPAKE-SESSION-008",
+      "name": "Total message bytes exchanged",
+      "description": "Verify total bytes in complete session",
+      "computation": {
+        "round1_tx": 225,
+        "round1_rx": 225,
+        "round2_tx": 113,
+        "round2_rx": 113,
+        "confirm_tx": 17,
+        "confirm_rx": 17,
+        "total": 710
+      },
+      "assertions": [
+        { "field": "totalTxBytes", "equals": 355 },
+        { "field": "totalRxBytes", "equals": 355 },
+        { "field": "totalBytes", "equals": 710 }
+      ]
+    },
+    {
+      "id": "JPAKE-SESSION-009",
+      "name": "Session rejects out-of-order messages",
+      "description": "Protocol enforces correct message ordering",
+      "test_cases": [
+        { "scenario": "Round2 before Round1", "expected_error": "unexpectedState" },
+        { "scenario": "Confirm before Round2", "expected_error": "unexpectedState" },
+        { "scenario": "Round1 response when idle", "expected_error": "unexpectedState" }
+      ]
+    },
+    {
+      "id": "JPAKE-SESSION-010",
+      "name": "Session handles 4-digit and 6-digit codes",
+      "description": "Both sensor code formats work correctly",
+      "test_cases": [
+        { "code": "1234", "utf8_hex": "31323334", "length": 4 },
+        { "code": "123456", "utf8_hex": "3030313233343536", "length": 8, "note": "00 prefix" }
+      ]
+    }
+  ],
+
+  "wire_format_summary": {
+    "total_messages": 6,
+    "opcodes": {
+      "0x02": "AuthRound1 (bidirectional)",
+      "0x03": "AuthRound2 (bidirectional)",
+      "0x04": "AuthConfirm (bidirectional)"
+    },
+    "message_sizes": {
+      "round1": 225,
+      "round2": 113,
+      "confirm": 17
+    },
+    "total_tx_bytes": 355,
+    "total_rx_bytes": 355,
+    "ble_characteristic": "Authentication"
+  },
+
+  "security_properties": {
+    "forward_secrecy": true,
+    "offline_dictionary_resistance": true,
+    "password_not_revealed": true,
+    "mutual_authentication": true,
+    "replay_protection": "Role differentiation + fresh random values",
+    "zkp_verification": "Each phase verifies zero-knowledge proofs"
+  },
+
+  "error_handling": {
+    "invalid_zkp": { "action": "reject", "state": "failed", "error": "zkpVerificationFailed" },
+    "wrong_opcode": { "action": "reject", "state": "unchanged", "error": "invalidResponse" },
+    "truncated_message": { "action": "reject", "state": "unchanged", "error": "invalidResponse" },
+    "confirmation_mismatch": { "action": "reject", "state": "failed", "error": "confirmationFailed" },
+    "timeout": { "action": "reset", "state": "idle", "error": "timeout" }
+  },
+
+  "related_sessions": [
+    { "id": "SESSION-G7-001a", "name": "G7 BLE connection sequence", "status": "complete" },
+    { "id": "SESSION-G7-001b", "name": "G7 J-PAKE Round 1 vectors", "status": "complete" },
+    { "id": "SESSION-G7-001c", "name": "G7 J-PAKE Round 2 vectors", "status": "complete" },
+    { "id": "SESSION-G7-001d", "name": "G7 key confirmation vectors", "status": "complete" },
+    { "id": "SESSION-G7-001e", "name": "Full J-PAKE session fixture", "status": "current" }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "_comment": "G7-FIX-009: PYTHON-COMPAT test vectors for password → scalar derivation",
+  "_trace": "G7-FIX-009, PRD-008 REQ-BLE-008",
+  "_generated_by": "tools/g7-cli/g7-jpake.py --derive <password> --all-variants --json",
+  
+  "constants": {
+    "default_salt": "G7-JPAKE-PASSWORD",
+    "default_salt_hex": "47372d4a50414b452d50415353574f5244",
+    "pbkdf2_iterations": 100000
+  },
+  
+  "variants": [
+    "raw",
+    "sha256_no_salt",
+    "sha256_salt",
+    "with_serial",
+    "pbkdf2",
+    "hkdf"
+  ],
+  
+  "test_vectors": [
+    {
+      "id": "DERIVE-001",
+      "description": "4-digit sensor code 1234",
+      "password": "1234",
+      "password_utf8_hex": "31323334",
+      "serial": null,
+      "expected": {
+        "raw": "3132333400000000000000000000000000000000000000000000000000000000",
+        "sha256_no_salt": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+        "sha256_salt": "a4e7fdfc85846476a81c629d035020f76a9cfb1dea4471c8cba3b9b795e7a765",
+        "with_serial": "a4e7fdfc85846476a81c629d035020f76a9cfb1dea4471c8cba3b9b795e7a765",
+        "pbkdf2": "78aa81e2093fdb11a5879a054e53a8ea0c779603178dd79adcd7161308c97550",
+        "hkdf": "78516196cb804bce4c4d936c6621be650696d0e0e02e8c6c1fcd314f3355c656"
+      }
+    },
+    {
+      "id": "DERIVE-002",
+      "description": "4-digit sensor code 5678",
+      "password": "5678",
+      "password_utf8_hex": "35363738",
+      "serial": null,
+      "expected": {
+        "raw": "3536373800000000000000000000000000000000000000000000000000000000",
+        "sha256_no_salt": "f8638b979b2f4f793ddb6dbd197e0ee25a7a6ea32b0ae22f5e3c5d119d839e75",
+        "sha256_salt": "2a44bcfda23718f15f5c328a13c1017ddd8e18cfe4efb4fd67df9ad7e12f4518",
+        "with_serial": "2a44bcfda23718f15f5c328a13c1017ddd8e18cfe4efb4fd67df9ad7e12f4518",
+        "pbkdf2": "181c2c60cee3260add30aceb42df2f287104f99deed3ee2364c511ef08f1a728",
+        "hkdf": "c1c7b4a7c51d09e2e83959e6e6ee533cf7b45b948da9b8ccc50c3aa61c8214bf"
+      }
+    },
+    {
+      "id": "DERIVE-003",
+      "description": "4-digit sensor code with zeros 0000",
+      "password": "0000",
+      "password_utf8_hex": "30303030",
+      "serial": null,
+      "expected": {
+        "raw": "3030303000000000000000000000000000000000000000000000000000000000",
+        "sha256_no_salt": "9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0",
+        "sha256_salt": "883c948f01d111eeb120e68c37955b6e7cbbafef86111e47c3e4caf88941af5c",
+        "with_serial": "883c948f01d111eeb120e68c37955b6e7cbbafef86111e47c3e4caf88941af5c",
+        "pbkdf2": "6303b65e94421814bd6c979d1d648b616070b1cac38b05f93fabc69919a855b4",
+        "hkdf": "204a9ab8b860860fa94b412b5ff23619c944192d3e9d18e784096693b3c2b792"
+      }
+    },
+    {
+      "id": "DERIVE-004",
+      "description": "6-digit sensor code 123456 (xDrip '00' prefix)",
+      "password": "123456",
+      "password_utf8_hex": "313233343536",
+      "password_with_prefix": "00123456",
+      "serial": null,
+      "expected": {
+        "raw": "3030313233343536000000000000000000000000000000000000000000000000",
+        "sha256_no_salt": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+        "sha256_salt": "00c7226ab002e6e046f7dabe3ed3586b8f07eea90568e7eb980dce2357d80653",
+        "with_serial": "00c7226ab002e6e046f7dabe3ed3586b8f07eea90568e7eb980dce2357d80653",
+        "pbkdf2": "5e356f5f4738e5029a9b87c5582d8bd44e53a5dd44096aa9cbc45d634e88e682",
+        "hkdf": "f42d246d21f6ecb6be7271198f893eab9d24229e0ac38a0bab6a4ee30b790cc9"
+      },
+      "_note": "Raw variant uses '00' prefix per xDrip, SHA256 variants use raw password"
+    },
+    {
+      "id": "DERIVE-005",
+      "description": "with_serial variant with actual serial",
+      "password": "1234",
+      "password_utf8_hex": "31323334",
+      "serial": "3M1234ABCD",
+      "expected": {
+        "with_serial": "2d90c4ebac4a4c5f67f84137859f1b7e6b46eab0f26fc5fd3685ab3936e21759"
+      }
+    }
+  ],
+  
+  "password_to_scalar_tests": [
+    {
+      "id": "PTS-001",
+      "description": "ScalarOperations.passwordToScalar - 4 digit",
+      "password": "1234",
+      "expected_hex": "31323334",
+      "expected_bytes": [49, 50, 51, 52],
+      "_note": "Raw bytes without padding - matches Swift passwordToScalar"
+    },
+    {
+      "id": "PTS-002",
+      "description": "ScalarOperations.passwordToScalar - 6 digit with 00 prefix",
+      "password": "123456",
+      "expected_hex": "3030313233343536",
+      "expected_bytes": [48, 48, 49, 50, 51, 52, 53, 54],
+      "_note": "6-digit code gets '00' prefix (ASCII 0x30, 0x30)"
+    }
+  ],
+  
+  "assertions": [
+    {
+      "id": "ASSERT-001",
+      "description": "All scalars are exactly 32 bytes",
+      "field": "scalar.count",
+      "equals": 32
+    },
+    {
+      "id": "ASSERT-002",
+      "description": "Raw variant preserves UTF-8 bytes at start",
+      "field": "raw_variant[0:4]",
+      "for_password": "1234",
+      "equals_hex": "31323334"
+    },
+    {
+      "id": "ASSERT-003",
+      "description": "Salt is UTF-8 encoded",
+      "field": "default_salt",
+      "equals": "G7-JPAKE-PASSWORD"
+    }
+  ]
+}

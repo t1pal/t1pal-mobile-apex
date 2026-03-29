@@ -1,0 +1,212 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T08:30:00Z",
+    "source": "Protocol documentation synthesis",
+    "references": [
+      "externals/decoding-carelink/decocare/commands.py",
+      "docs/architecture/CARELINK-PACKET-FORMATS.md",
+      "externals/MinimedKit/MinimedKit/Messages/"
+    ],
+    "pump": {
+      "model": "Medtronic 515",
+      "serial": "208850",
+      "serialHex": "0x032F52"
+    },
+    "notes": "Synthetic fixture based on documented Medtronic Carelink protocol. Used for conformance testing."
+  },
+  "commands": {
+    "wakeup": {
+      "opcode": 93,
+      "opcodeHex": "0x5D",
+      "name": "PowerControl",
+      "description": "Wake pump RF receiver from sleep mode",
+      "format": {
+        "header": "0xA7",
+        "opcode": "0x5D",
+        "serial": "[3 bytes - pump serial]",
+        "params": "[duration_minutes, 0x00]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "durationMinutes": 2,
+        "rawPacket": "A7 5D 03 2F 52 02 00",
+        "notes": "Duration=2 minutes. High repeat count (200-500) needed to wake sleeping pump."
+      },
+      "rileyLinkCommand": {
+        "opcode": "0x05",
+        "sendChannel": 0,
+        "repeatCount": 200,
+        "listenChannel": 0,
+        "timeoutMs": 12000,
+        "notes": "12 second timeout per Loop PumpOpsSession.swift:112"
+      }
+    },
+    "getPumpModel": {
+      "opcode": 141,
+      "opcodeHex": "0x8D",
+      "name": "ReadPumpModel",
+      "description": "Query pump model number (e.g., 515, 522, 723)",
+      "format": {
+        "request": "A7 8D [serial] 00",
+        "response": "A7 8D [serial] [model_string]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "request": "A7 8D 03 2F 52 00",
+        "response": "A7 8D 03 2F 52 35 31 35",
+        "decoded": "515"
+      }
+    },
+    "getBattery": {
+      "opcode": 114,
+      "opcodeHex": "0x72",
+      "name": "ReadBattery",
+      "description": "Query battery status and voltage",
+      "format": {
+        "request": "A7 72 [serial] 00",
+        "response": "A7 72 [serial] [status] [voltage_hi] [voltage_lo]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "request": "A7 72 03 2F 52 00",
+        "response": "A7 72 03 2F 52 00 01 5B",
+        "decoded": {
+          "status": "normal",
+          "voltage": 1.35
+        }
+      }
+    },
+    "readPumpStatus": {
+      "opcode": 206,
+      "opcodeHex": "0xCE",
+      "name": "ReadPumpStatus",
+      "description": "Query current pump delivery status",
+      "format": {
+        "request": "A7 CE [serial] 00",
+        "response": "A7 CE [serial] [flags]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "request": "A7 CE 03 2F 52 00",
+        "response": "A7 CE 03 2F 52 00",
+        "decoded": {
+          "bolusing": false,
+          "suspended": false
+        }
+      }
+    },
+    "tempBasal": {
+      "opcode": 76,
+      "opcodeHex": "0x4C",
+      "name": "TempBasal",
+      "description": "Set temporary basal rate",
+      "format": {
+        "header": "0xA7",
+        "opcode": "0x4C",
+        "serial": "[3 bytes]",
+        "params": "[rate_strokes_hi] [rate_strokes_lo] [duration_halfhours]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "rate": 0.5,
+        "durationMinutes": 30,
+        "rawPacket": "A7 4C 03 2F 52 00 14 01",
+        "notes": "0.5 U/hr = 20 strokes (0x14), 30 min = 1 half-hour"
+      },
+      "strokeCalculation": {
+        "formula": "strokes = rate_u_per_hr * 40",
+        "examples": [
+          {"rate": 0.0, "strokes": 0},
+          {"rate": 0.5, "strokes": 20},
+          {"rate": 1.0, "strokes": 40},
+          {"rate": 2.0, "strokes": 80}
+        ]
+      }
+    },
+    "bolus": {
+      "opcode": 66,
+      "opcodeHex": "0x42",
+      "name": "Bolus",
+      "description": "Deliver bolus insulin",
+      "format": {
+        "header": "0xA7",
+        "opcode": "0x42",
+        "serial": "[3 bytes]",
+        "params": "[strokes_hi] [strokes_lo]"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "units": 1.0,
+        "rawPacket": "A7 42 03 2F 52 00 28",
+        "notes": "1.0 U = 40 strokes (0x28) for newer pumps"
+      },
+      "strokeCalculation": {
+        "olderPumps": "strokes = units * 10",
+        "newerPumps": "strokes = units * 40",
+        "boundary": "Model 523 and newer use 40 strokes/unit"
+      },
+      "WARNING": "DO NOT USE WITHOUT UNDERSTANDING PUMP MODEL STROKE FACTOR"
+    },
+    "suspend": {
+      "opcode": 77,
+      "opcodeHex": "0x4D",
+      "name": "Suspend",
+      "description": "Suspend insulin delivery",
+      "format": {
+        "request": "A7 4D [serial] 01",
+        "response": "ACK"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "request": "A7 4D 03 2F 52 01"
+      }
+    },
+    "resume": {
+      "opcode": 77,
+      "opcodeHex": "0x4D",
+      "name": "Resume",
+      "description": "Resume insulin delivery",
+      "format": {
+        "request": "A7 4D [serial] 00",
+        "response": "ACK"
+      },
+      "example": {
+        "pumpSerial": "208850",
+        "request": "A7 4D 03 2F 52 00"
+      }
+    }
+  },
+  "encoding": {
+    "4b6b": {
+      "description": "Manchester-style encoding used over RF",
+      "table": {
+        "0x0": "0x15",
+        "0x1": "0x31",
+        "0x2": "0x32",
+        "0x3": "0x23",
+        "0x4": "0x34",
+        "0x5": "0x25",
+        "0x6": "0x26",
+        "0x7": "0x16",
+        "0x8": "0x1A",
+        "0x9": "0x19",
+        "0xA": "0x2A",
+        "0xB": "0x0B",
+        "0xC": "0x2C",
+        "0xD": "0x0D",
+        "0xE": "0x0E",
+        "0xF": "0x1C"
+      },
+      "notes": "Each 4-bit nibble encodes to 6 bits. RileyLink firmware handles encoding/decoding."
+    }
+  },
+  "rileyLinkProtocol": {
+    "responseFormat": {
+      "success": "0xDD [rf_data...]",
+      "timeout": "0xAA",
+      "interrupted": "0xBB",
+      "zeroData": "0xCC"
+    },
+    "notes": "RileyLink prepends response code to RF data"
+  }
+}

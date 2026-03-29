@@ -1,0 +1,240 @@
+{
+  "_source": "NightscoutKit ProfileConverter (T1Pal)",
+  "_task": "NS-SESSION-003",
+  "_description": "Profile fetch → modify → upload round-trip sequence",
+  "_format": {
+    "session": "Complete TX/RX sequence for profile management",
+    "endpoints": {
+      "GET /api/v1/profile": "Fetch current profile store",
+      "PUT /api/v1/profile": "Update profile store (replaces entire document)",
+      "POST /api/v1/profile": "Create new profile store"
+    },
+    "structure": "ProfileStore contains named profiles, each with schedule arrays",
+    "units": "mg/dL or mmol/L - client must handle conversion"
+  },
+  "test_vectors": [
+    {
+      "id": "profile_fetch_and_parse",
+      "description": "Fetch profile store, parse into AlgorithmProfile",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/profile",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": [
+            {
+              "_id": "profile001",
+              "defaultProfile": "Default",
+              "store": {
+                "Default": {
+                  "dia": 5,
+                  "carbratio": [
+                    {"time": "00:00", "value": 12, "timeAsSeconds": 0},
+                    {"time": "06:00", "value": 10, "timeAsSeconds": 21600},
+                    {"time": "12:00", "value": 11, "timeAsSeconds": 43200},
+                    {"time": "18:00", "value": 10, "timeAsSeconds": 64800}
+                  ],
+                  "sens": [
+                    {"time": "00:00", "value": 50, "timeAsSeconds": 0},
+                    {"time": "06:00", "value": 45, "timeAsSeconds": 21600},
+                    {"time": "18:00", "value": 55, "timeAsSeconds": 64800}
+                  ],
+                  "basal": [
+                    {"time": "00:00", "value": 0.8, "timeAsSeconds": 0},
+                    {"time": "03:00", "value": 0.9, "timeAsSeconds": 10800},
+                    {"time": "06:00", "value": 1.1, "timeAsSeconds": 21600},
+                    {"time": "09:00", "value": 1.0, "timeAsSeconds": 32400},
+                    {"time": "21:00", "value": 0.85, "timeAsSeconds": 75600}
+                  ],
+                  "target_low": [
+                    {"time": "00:00", "value": 100, "timeAsSeconds": 0}
+                  ],
+                  "target_high": [
+                    {"time": "00:00", "value": 120, "timeAsSeconds": 0}
+                  ],
+                  "timezone": "America/New_York",
+                  "units": "mg/dl"
+                }
+              },
+              "startDate": "2026-01-01T00:00:00.000Z",
+              "mills": 1735689600000,
+              "units": "mg/dl"
+            }
+          ]
+        },
+        {
+          "step": 3,
+          "action": "parse",
+          "description": "Convert to AlgorithmProfile",
+          "result": {
+            "insulinActionDuration": 5.0,
+            "carbRatios": 4,
+            "sensitivities": 3,
+            "basalRates": 5,
+            "targetRange": {"low": 100, "high": 120}
+          }
+        }
+      ]
+    },
+    {
+      "id": "profile_modify_and_upload",
+      "description": "Modify basal rates and upload updated profile",
+      "steps": [
+        {
+          "step": 1,
+          "action": "modify",
+          "description": "Client changes morning basal from 1.1 to 1.2",
+          "change": {
+            "path": "store.Default.basal[2].value",
+            "old": 1.1,
+            "new": 1.2
+          }
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "method": "PUT",
+          "path": "/api/v1/profile",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "_id": "profile001",
+            "defaultProfile": "Default",
+            "store": {
+              "Default": {
+                "dia": 5,
+                "basal": [
+                  {"time": "00:00", "value": 0.8, "timeAsSeconds": 0},
+                  {"time": "03:00", "value": 0.9, "timeAsSeconds": 10800},
+                  {"time": "06:00", "value": 1.2, "timeAsSeconds": 21600},
+                  {"time": "09:00", "value": 1.0, "timeAsSeconds": 32400},
+                  {"time": "21:00", "value": 0.85, "timeAsSeconds": 75600}
+                ],
+                "note": "Other fields unchanged..."
+              }
+            }
+          }
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "n": 1,
+            "nModified": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "profile_create_new",
+      "description": "Create a new named profile (e.g., 'Exercise')",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "PUT",
+          "path": "/api/v1/profile",
+          "body": {
+            "_id": "profile001",
+            "defaultProfile": "Default",
+            "store": {
+              "Default": {
+                "note": "existing profile unchanged"
+              },
+              "Exercise": {
+                "dia": 5,
+                "carbratio": [
+                  {"time": "00:00", "value": 15, "timeAsSeconds": 0}
+                ],
+                "sens": [
+                  {"time": "00:00", "value": 70, "timeAsSeconds": 0}
+                ],
+                "basal": [
+                  {"time": "00:00", "value": 0.5, "timeAsSeconds": 0}
+                ],
+                "target_low": [
+                  {"time": "00:00", "value": 120, "timeAsSeconds": 0}
+                ],
+                "target_high": [
+                  {"time": "00:00", "value": 140, "timeAsSeconds": 0}
+                ],
+                "timezone": "America/New_York",
+                "units": "mg/dl"
+              }
+            }
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "n": 1,
+            "nModified": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "profile_mmol_conversion",
+      "description": "Handle mmol/L profile with unit conversion",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "rx",
+          "note": "Server returns mmol/L profile",
+          "body": {
+            "store": {
+              "Default": {
+                "sens": [
+                  {"time": "00:00", "value": 2.8, "timeAsSeconds": 0}
+                ],
+                "target_low": [
+                  {"time": "00:00", "value": 5.5, "timeAsSeconds": 0}
+                ],
+                "target_high": [
+                  {"time": "00:00", "value": 6.7, "timeAsSeconds": 0}
+                ],
+                "units": "mmol"
+              }
+            }
+          }
+        },
+        {
+          "step": 2,
+          "action": "convert",
+          "description": "Client converts mmol/L to mg/dL",
+          "conversions": {
+            "sens": {"mmol": 2.8, "mgdl": 50.4},
+            "target_low": {"mmol": 5.5, "mgdl": 99},
+            "target_high": {"mmol": 6.7, "mgdl": 121}
+          },
+          "formula": "mgdl = mmol * 18.0182"
+        }
+      ]
+    }
+  ],
+  "profile_schema": {
+    "store_fields": ["dia", "carbratio", "sens", "basal", "target_low", "target_high", "timezone", "units"],
+    "schedule_entry": {
+      "time": "HH:MM format",
+      "value": "numeric value",
+      "timeAsSeconds": "seconds since midnight"
+    },
+    "units_values": ["mg/dl", "mg/dL", "mmol", "mmol/L"]
+  }
+}

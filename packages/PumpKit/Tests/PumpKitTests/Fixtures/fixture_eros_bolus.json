@@ -1,0 +1,288 @@
+{
+  "_source": "OmniKit BolusTests.swift (Loop/Trio)",
+  "_task": "EROS-SYNTH-004",
+  "_description": "Test vectors for OmniPod Eros bolus commands (SetInsulinScheduleCommand + BolusExtraCommand)",
+  "_format": {
+    "SetInsulinScheduleCommand": {
+      "typeRaw": "0x1a",
+      "structure": "1a LL NNNNNNNN 02 CCCC HH SSSS PPPP [napp entries...]",
+      "fields": {
+        "LL": "length (1 byte)",
+        "NNNNNNNN": "nonce (4 bytes big-endian)",
+        "02": "bolus delivery type marker",
+        "CCCC": "checksum (2 bytes)",
+        "HH": "half-hour entry count",
+        "SSSS": "immediate pulses * 10 (hundredths of units)",
+        "PPPP": "immediate pulses",
+        "napp": "n=segments, a=alternateSegmentPulse, pp=pulses"
+      }
+    },
+    "BolusExtraCommand": {
+      "typeRaw": "0x17",
+      "structure": "17 LL BO NNNN XXXXXXXX YYYY ZZZZZZZZ",
+      "fields": {
+        "LL": "length (always 0x0d = 13)",
+        "B": "beep flags (0x40=ack, 0x04=completion)",
+        "O": "program reminder interval (0=none, 0x3c=60min)",
+        "NNNN": "immediate pulses * 10",
+        "XXXXXXXX": "time between pulses in 0.1µs units",
+        "YYYY": "extended pulses * 10",
+        "ZZZZZZZZ": "extended duration in 0.1µs units"
+      }
+    },
+    "constants": {
+      "pulseSize": 0.05,
+      "secondsPerBolusPulse": 2,
+      "secondsPerPrimePulse": 1,
+      "primeUnits": 2.6,
+      "cannulaInsertionUnits": 0.5
+    }
+  },
+  "immediate_bolus_vectors": [
+    {
+      "id": "prime_command",
+      "description": "Prime command (2.6U at 1 sec/pulse)",
+      "source": "BolusTests.swift testPrimeBolusCommand()",
+      "operation": "encodeDecodeBlock",
+      "setInsulinScheduleHex": "1a0ebed2e16b02010a0101a000340034",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xbed2e16b",
+        "nonceDecimal": 3201491307,
+        "units": 2.6,
+        "timeBetweenPulses": 1,
+        "tableEntries": [
+          {
+            "segments": 1,
+            "pulses": 52,
+            "alternateSegmentPulse": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "prime_extra_command",
+      "description": "Prime BolusExtraCommand",
+      "source": "BolusTests.swift testBolusExtraCommand()",
+      "operation": "encode",
+      "bolusExtraHex": "170d000208000186a0000000000000",
+      "expected": {
+        "type": "BolusExtraCommand",
+        "units": 2.6,
+        "timeBetweenPulses": 1,
+        "acknowledgementBeep": false,
+        "completionBeep": false,
+        "programReminderInterval": 0,
+        "extendedUnits": 0,
+        "extendedDuration": 0
+      }
+    },
+    {
+      "id": "bolus_30U",
+      "description": "30U immediate bolus with completion beep",
+      "source": "BolusTests.swift testBolusExtraCommand()",
+      "operation": "decode",
+      "bolusExtraHex": "170d7c177000030d40000000000000",
+      "expected": {
+        "type": "BolusExtraCommand",
+        "units": 30.0,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "timeBetweenPulsesUs": 200000,
+        "timeBetweenPulses": 2,
+        "extendedUnits": 0,
+        "extendedDuration": 0
+      }
+    },
+    {
+      "id": "bolus_0_15U",
+      "description": "0.15U immediate bolus",
+      "source": "BolusTests.swift testBolusAndBolusExtraMatch2()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a0e243085c802003701003000030003",
+      "bolusExtraHex": "170d00001e00030d40000000000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x243085c8",
+        "units": 0.15,
+        "pulses": 3,
+        "pulsesHex": "0x0003"
+      }
+    },
+    {
+      "id": "bolus_29_95U",
+      "description": "29.95U immediate bolus (large bolus)",
+      "source": "BolusTests.swift testLargeBolus()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a0e31204ba702014801257002570257",
+      "bolusExtraHex": "170d7c176600030d40000000000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x31204ba7",
+        "units": 29.95,
+        "pulses": 599,
+        "pulsesHex": "0x0257",
+        "completionBeep": true,
+        "programReminderInterval": 60
+      }
+    },
+    {
+      "id": "bolus_2_05U",
+      "description": "2.05U immediate bolus (odd amount)",
+      "source": "BolusTests.swift testOddBolus()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a0ecf9e81ac0200e501029000290029",
+      "bolusExtraHex": "170d3c019a00030d40000000000000",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xcf9e81ac",
+        "units": 2.05,
+        "pulses": 41,
+        "pulsesHex": "0x0029"
+      }
+    }
+  ],
+  "extended_bolus_vectors": [
+    {
+      "id": "extended_1U_1hr",
+      "description": "1.0U extended bolus over 1 hour (no immediate)",
+      "source": "BolusTests.swift testExtendedBolus()",
+      "operation": "decode",
+      "setInsulinScheduleHex": "1a100375a60202001703000000000000100a",
+      "bolusExtraHex": "170d7c000000030d4000c80112a880",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x0375a602",
+        "immediateUnits": 0.0,
+        "extendedUnits": 1.0,
+        "extendedDurationMinutes": 60,
+        "tableEntries": [
+          {"segments": 1, "pulses": 0, "alternateSegmentPulse": false},
+          {"segments": 2, "pulses": 10, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "extended_0_05U_30min",
+      "description": "0.05U extended bolus over 30 minutes",
+      "source": "BolusTests.swift testNoImmediateExtendedBolusDeliveryEncoding()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a0e0518199202000302000000001800",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x05181992",
+        "immediateUnits": 0.0,
+        "extendedUnits": 0.05,
+        "extendedDurationMinutes": 30
+      }
+    },
+    {
+      "id": "extended_1U_4_5hr",
+      "description": "1.0U extended bolus over 4.5 hours",
+      "source": "BolusTests.swift testNoImmediateExtendedBolusDeliveryEncoding()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a16b93c64f602001e0a0000000000003002000320020003",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0xb93c64f6",
+        "immediateUnits": 0.0,
+        "extendedUnits": 1.0,
+        "extendedDurationMinutes": 270
+      }
+    },
+    {
+      "id": "extended_12U_6hr",
+      "description": "12U extended bolus over 6 hours (large)",
+      "source": "BolusTests.swift testLargeExtendedBolus()",
+      "operation": "decode",
+      "setInsulinScheduleHex": "1a10031719580200fd0d000000000000b014",
+      "bolusExtraHex": "170d7c000000030d40096000895440",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x03171958",
+        "immediateUnits": 0.0,
+        "extendedUnits": 12.0,
+        "extendedDurationMinutes": 360
+      }
+    }
+  ],
+  "dual_wave_bolus_vectors": [
+    {
+      "id": "dual_6U_2i_4e_3hr",
+      "description": "6U dual wave: 2U immediate + 4U extended over 3 hours",
+      "source": "BolusTests.swift testBolusDualWave()",
+      "operation": "decode",
+      "setInsulinScheduleHex": "1a1601e475cb02012907028000280028100d000e100d000e",
+      "bolusExtraHex": "170d3c019000030d40032000cdfe60",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x01e475cb",
+        "immediateUnits": 2.0,
+        "extendedUnits": 4.0,
+        "extendedDurationMinutes": 180,
+        "timeBetweenPulses": 2,
+        "tableEntries": [
+          {"segments": 1, "pulses": 40, "alternateSegmentPulse": false},
+          {"segments": 2, "pulses": 13, "alternateSegmentPulse": false},
+          {"segments": 1, "pulses": 14, "alternateSegmentPulse": false},
+          {"segments": 2, "pulses": 13, "alternateSegmentPulse": false},
+          {"segments": 1, "pulses": 14, "alternateSegmentPulse": false}
+        ]
+      }
+    },
+    {
+      "id": "dual_30U_50p_ext_8hr",
+      "description": "30U dual wave: 15U immediate + 15U extended over 8 hours",
+      "source": "BolusTests.swift testLargeBolusDualWave()",
+      "operation": "decode",
+      "setInsulinScheduleHex": "1a1e111619880202691112c0012c012c18121013181210131812101318121013",
+      "bolusExtraHex": "170d7c0bb800030d400bb800927c00",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x11161988",
+        "immediateUnits": 15.0,
+        "extendedUnits": 15.0,
+        "extendedDurationMinutes": 480,
+        "timeBetweenPulses": 2
+      }
+    },
+    {
+      "id": "dual_0_10U_50p_30min",
+      "description": "0.10U dual: 0.05U immediate + 0.05U extended over 30 minutes",
+      "source": "BolusTests.swift testDualBolusDeliveryEncoding()",
+      "operation": "encode",
+      "setInsulinScheduleHex": "1a0e0323193202001502001000011001",
+      "bolusExtraHex": "170d3c000a00030d40000a0aba9500",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x03231932",
+        "immediateUnits": 0.05,
+        "extendedUnits": 0.05,
+        "extendedDurationMinutes": 30
+      }
+    }
+  ],
+  "cancel_bolus_vectors": [
+    {
+      "id": "cancel_bolus",
+      "description": "Cancel bolus with beep",
+      "source": "BolusTests.swift testCancelBolusCommand()",
+      "operation": "encodeDecodeBlock",
+      "cancelDeliveryHex": "1f054d91f8ff64",
+      "expected": {
+        "type": "CancelDeliveryCommand",
+        "typeRaw": "0x1f",
+        "nonce": "0x4d91f8ff",
+        "deliveryType": "bolus",
+        "beepType": "beeeeeep",
+        "beepTypeRaw": "0x64"
+      }
+    }
+  ],
+  "python_compat": {
+    "description": "Python parsing helpers for bolus commands",
+    "parse_set_insulin_schedule": "def parse_bolus_schedule(data: bytes) -> dict:\n    \"\"\"Parse SetInsulinScheduleCommand for bolus.\"\"\"\n    if len(data) < 14 or data[0] != 0x1a:\n        raise ValueError('Invalid SetInsulinScheduleCommand')\n    \n    length = data[1]\n    nonce = int.from_bytes(data[2:6], 'big')\n    \n    if data[6] != 0x02:\n        raise ValueError('Not a bolus delivery type')\n    \n    checksum = int.from_bytes(data[7:9], 'big')\n    half_hour_count = data[9]\n    immediate_pulses_x10 = int.from_bytes(data[10:12], 'big')\n    immediate_pulses = int.from_bytes(data[12:14], 'big')\n    \n    # Parse table entries (2 bytes each)\n    entries = []\n    idx = 14\n    while idx + 1 < len(data):\n        entry = int.from_bytes(data[idx:idx+2], 'big')\n        segments = (entry >> 12) & 0xF\n        alternate = bool((entry >> 11) & 1)\n        pulses = entry & 0x7FF\n        entries.append({'segments': segments, 'alternate': alternate, 'pulses': pulses})\n        idx += 2\n    \n    return {\n        'nonce': hex(nonce),\n        'checksum': hex(checksum),\n        'halfHourCount': half_hour_count,\n        'immediateUnits': immediate_pulses * 0.05,\n        'immediatePulses': immediate_pulses,\n        'tableEntries': entries\n    }",
+    "parse_bolus_extra": "def parse_bolus_extra(data: bytes) -> dict:\n    \"\"\"Parse BolusExtraCommand.\"\"\"\n    if len(data) != 15 or data[0] != 0x17 or data[1] != 0x0d:\n        raise ValueError('Invalid BolusExtraCommand')\n    \n    beep_flags = data[2]\n    reminder_interval = data[3]\n    immediate_pulses_x10 = int.from_bytes(data[4:6], 'big')\n    time_between_pulses = int.from_bytes(data[6:10], 'big')  # 0.1µs units\n    extended_pulses_x10 = int.from_bytes(data[10:12], 'big')\n    extended_duration = int.from_bytes(data[12:16], 'big')  # 0.1µs units\n    \n    return {\n        'acknowledgementBeep': bool(beep_flags & 0x40),\n        'completionBeep': bool(beep_flags & 0x04),\n        'programReminderInterval': reminder_interval,\n        'immediateUnits': immediate_pulses_x10 / 200,\n        'timeBetweenPulsesSeconds': time_between_pulses / 10_000_000,\n        'extendedUnits': extended_pulses_x10 / 200,\n        'extendedDurationHours': extended_duration / 36_000_000_000\n    }"
+  }
+}

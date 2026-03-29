@@ -1,0 +1,244 @@
+{
+  "_comment": "Test vectors extracted from Juggluco libre3init.java (GPLv3), NIST/RFC3610, and DiaBLE",
+  "_source": "externals/Juggluco/Common/src/libre3/java/tk/glucodata/libre3init.java",
+  "_extracted": "2026-03-02",
+  
+  "ecdh_session": {
+    "_description": "ECDH key exchange test data from libre3init.java init() test",
+    
+    "rdtData": {
+      "_description": "Patch certificate data (140 bytes), passed to setPatchCertificate()",
+      "hex": "01514108934c007ae0d14a04881acc74eec1d7791fb88805137410d1057525af229324fc0b8c6347317b4a032e0feaba87dea30452718e475e71208b846beaac15e0b24c7943b7aadeb45c3ca76dbc26aec27643e1f0f9e51ac339f0712d3d117bb4f27191fbd7702f4cd681b703582187fb81a285365be2ec18fd4c2eb546e65feb08b91aaefb0806989bff",
+      "length": 140
+    },
+    
+    "data6": {
+      "_description": "Patch ephemeral public key (65 bytes), 0x04 prefix = uncompressed P-256",
+      "hex": "04f39d2df9dab578cac72baae27ff1ec2718343591198b5210702598a52865c31ef4659b576cc2fbb5416d06775ed65e04a9bf0f3e9d45738ae4856049812a811b",
+      "length": 65
+    },
+    
+    "nonce1": {
+      "_description": "Encryption nonce for encrypt test (7 bytes)",
+      "hex": "a501000092d044",
+      "length": 7
+    },
+    
+    "encrypt_input": {
+      "_description": "Plaintext to encrypt with nonce1 (36 bytes)",
+      "hex": "c657a692e57c63f2c9a19922bedd9ef4212427c0c974eca37091775914f9bc3df4895499",
+      "length": 36
+    },
+    
+    "nonce2": {
+      "_description": "Decryption nonce for decrypt test (7 bytes)",
+      "hex": "a601000012c2c3",
+      "length": 7
+    },
+    
+    "decrypt_input": {
+      "_description": "Ciphertext to decrypt with nonce2 (60 bytes)",
+      "hex": "4af56fa64670f90d7f3754184b457bf4438c2fefcaed32cee31f9549fd4234b03f659c8cce495ba5e7a723ccd3b3894fc76eb10e871af486e463153c",
+      "length": 60
+    }
+  },
+  
+  "alternate_test": {
+    "_description": "Second test vector set from commented code in libre3init.java",
+    
+    "input": {
+      "_description": "Patch certificate data (140 bytes), alternate test",
+      "hex": "017a4ed5574b007ae0b54a04501f0d09e2a1f2f53bf0f9473df1b78daae9f70e0337e920dcf9ce55c7a804da33dc3c3ddc38e603d1611c1b65fc8af5ab247be44220951bca6c843a694bea714eb7e4310f91258f584c1a4a31f6e29039e2a6264f60847002fa06202e607ae97e6da61c2695523b30eed561ea4bf13d47a3470aa06dcceb107de5187810944f",
+      "length": 140
+    }
+  },
+  
+  "aes_ccm_oracle_vectors": {
+    "_description": "AES-CCM test vectors for oracle testing - validate encrypt/decrypt",
+    
+    "diable_vector1": {
+      "_description": "DiaBLE testAESCCMTestCase1Decrypt - 7-byte nonce, 4-byte tag",
+      "_source": "externals/DiaBLE/DiaBLE/Crypto.swift",
+      "key": "404142434445464748494a4b4c4d4e4f",
+      "nonce": "10111213141516",
+      "nonce_length": 7,
+      "aad": "0001020304050607",
+      "plaintext": "20212223",
+      "ciphertext_with_tag": "7162015b4dac255d",
+      "tag_length": 4
+    },
+    
+    "libre3_4byte_tag_vector1": {
+      "_description": "Libre3 CCM with 13-byte nonce, 4-byte tag - generated from Python reference",
+      "_source": "tools/libre-cli/libre3_crypto.py",
+      "key": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "nonce": "00000003020100a0a1a2a3a4a5",
+      "nonce_length": 13,
+      "aad": "",
+      "plaintext": "08090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "ciphertext_with_tag": "588c979a61c663d2f066d0c2c0f989806d5f6b61dac38429852d88",
+      "tag_length": 4
+    },
+    
+    "libre3_empty_plaintext": {
+      "_description": "Empty plaintext produces just MAC tag",
+      "key": "42424242424242424242424242424242",
+      "nonce": "13131313131313131313131313",
+      "nonce_length": 13,
+      "aad": "",
+      "plaintext": "",
+      "ciphertext_with_tag": "6b80237d",
+      "tag_length": 4
+    },
+    
+    "libre3_short_message": {
+      "_description": "Short message test",
+      "key": "0102030405060708090a0b0c0d0e0f10",
+      "nonce": "0001020304050607a1a2a3a4a5",
+      "nonce_length": 13,
+      "aad": "",
+      "plaintext": "48656c6c6f",
+      "ciphertext_with_tag": "c4eec67adb0dec62cc",
+      "tag_length": 4
+    }
+  },
+  
+  "aes_ccm_vectors": {
+    "_description": "AES-CCM test vectors from RFC 3610 / NIST SP 800-38C (8-byte tag)",
+    "_note": "These use 8-byte tag, not Libre3's 4-byte tag - for reference only",
+    
+    "rfc3610_vector1": {
+      "_description": "RFC 3610 Packet Vector #1 (Section 8)",
+      "key": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "nonce": "00000003020100a0a1a2a3a4a5",
+      "aad": "0001020304050607",
+      "plaintext": "08090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "ciphertext": "588c979a61c663d2f066d0c2c0f989806d5f6b61dac38417e8d12cfdf926e0",
+      "tag_length": 8
+    },
+    
+    "rfc3610_vector2": {
+      "_description": "RFC 3610 Packet Vector #2 (Section 8)",
+      "key": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "nonce": "00000004030201a0a1a2a3a4a5",
+      "aad": "0001020304050607",
+      "plaintext": "08090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "ciphertext": "72c91a36e135f8cf291ca894085c87e3cc15c439c9e43a3ba091d56e10400916",
+      "tag_length": 8
+    },
+    
+    "libre3_ccm_config": {
+      "_description": "Libre3-specific CCM configuration",
+      "nonce_length": 13,
+      "tag_length": 4,
+      "key_length": 16,
+      "_note": "7-byte nonce from Juggluco gets extended to 13 bytes with sequence + descriptor"
+    }
+  },
+  
+  "crypto_constants": {
+    "_description": "Key derivation constants from ECDHCrypto.java",
+    
+    "security_version_0": {
+      "app_certificate_length": 162,
+      "private_key_length": 165
+    },
+    "security_version_1": {
+      "app_certificate_length": 162,
+      "private_key_length": 165
+    }
+  },
+  
+  "diable_packet_descriptors": {
+    "_description": "All 8 packet type descriptors from DiaBLE Libre3.swift packetDescriptors",
+    "_source": "externals/DiaBLE/DiaBLE/Libre3.swift:272-281",
+    "_usage": "Used in nonce construction: nonce[2:5] = packetDescriptors[packetType]",
+    
+    "descriptors": [
+      {"type": 0, "descriptor": "000000", "name": "null/padding"},
+      {"type": 1, "descriptor": "00000f", "name": "unknown_1"},
+      {"type": 2, "descriptor": "0000f0", "name": "unknown_2"},
+      {"type": 3, "descriptor": "000f00", "name": "unknown_3"},
+      {"type": 4, "descriptor": "00f000", "name": "unknown_4"},
+      {"type": 5, "descriptor": "0f0000", "name": "unknown_5"},
+      {"type": 6, "descriptor": "f00000", "name": "unknown_6"},
+      {"type": 7, "descriptor": "440000", "name": "factoryData"}
+    ],
+    
+    "_note": "Our implementation uses different descriptors (0x24/0x29/0x25) from DiaBLE - needs verification"
+  },
+  
+  "diable_security_commands": {
+    "_description": "Security command bytes from DiaBLE Libre3.swift SecurityCommand enum",
+    "_source": "externals/DiaBLE/DiaBLE/Libre3.swift:448-471",
+    
+    "commands": {
+      "CMD_ECDH_START": "0x01",
+      "CMD_LOAD_CERT_DATA": "0x02",
+      "CMD_CERT_LOAD_DONE": "0x03",
+      "CMD_CHALLENGE_LOAD_DONE": "0x08",
+      "CMD_SEND_CERTIFICATE": "0x09",
+      "CMD_KEY_AGREEMENT": "0x0D",
+      "CMD_EPHEMERAL_LOAD_DONE": "0x0E",
+      "CMD_READ_CHALLENGE": "0x11"
+    },
+    
+    "events": {
+      "EVT_CERTIFICATE_ACCEPTED": "0x04",
+      "EVT_CHALLENGE_LOAD_DONE": "0x08",
+      "EVT_CERTIFICATE_READY": "0x0A",
+      "EVT_EPHEMERAL_READY": "0x0F"
+    }
+  },
+  
+  "diable_ble_uuids": {
+    "_description": "BLE service and characteristic UUIDs from DiaBLE Libre3.swift",
+    "_source": "externals/DiaBLE/DiaBLE/Libre3.swift:318-334",
+    
+    "data_service": "089810CC-EF89-11E9-81B4-2A2AE2DBCCE4",
+    "security_service": "0898203A-EF89-11E9-81B4-2A2AE2DBCCE4",
+    
+    "characteristics": {
+      "patchControl": "08981338-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "patchStatus": "08981482-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "oneMinuteReading": "0898177A-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "historicalData": "0898195A-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "clinicalData": "08981AB8-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "eventLog": "08981BEE-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "factoryData": "08981D24-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "securityCommands": "08982198-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "challengeData": "089822CE-EF89-11E9-81B4-2A2AE2DBCCE4",
+      "certificateData": "089823FA-EF89-11E9-81B4-2A2AE2DBCCE4"
+    }
+  },
+  
+  "diable_app_certificates": {
+    "_description": "App certificates from DiaBLE Libre3.swift appCertificates",
+    "_source": "externals/DiaBLE/DiaBLE/Libre3.swift:1037-1040",
+    
+    "certificate_0": {
+      "hex": "03000102030405060708090a0b0c0d0e0f10000115f149fe101000000000000000004275fd1ef42b145a52c593ae6b5a75588a9f7eaf1c0f9985f993d58f147bb841684224499637928dc43f38447efebbbeb4a53b3255c0be0fe1f235844a3d3299eba97b8e6c3170939f2778f64866f066deb915dd6629eee4730a1e14cab75c18c4fec53f8854c87643a764f4087aec0394c210c18865a8ff45adc3727f48b53a7",
+      "length": 162,
+      "security_level": 0
+    },
+    "certificate_1": {
+      "hex": "03030102030405060708090a0b0c0d0e0f1000016189765501000000000000000048242be33f1a3308801312fa62cc4842a43d1204922ad201d8775bb226f611f75b0ef3d5bc6cc4317caa457584ab003f1712336089d3a4f29838ed0dc666deaea2d65a00dfff5d7bcae21655e302e3458e774daaaacaa87af75f1b87884b18d4ce875d0d108c903a834471a4ff674b2d30bcba0623730314b7786e4437b177aec3c8",
+      "length": 162,
+      "security_level": 3
+    }
+  },
+  
+  "diable_patch_signing_keys": {
+    "_description": "Patch signing keys for certificate verification from DiaBLE",
+    "_source": "externals/DiaBLE/DiaBLE/Libre3.swift:1047-1050",
+    
+    "signing_key_0": {
+      "hex": "04b69d1734f5e425bcc0576ad1f727c1311c90b6ea986f006e7e9f9096f6a8284f12bf7ddfe154a3f1d45a0f2734ecabca6b9eb56ee4ecca87853ad853b6a64180",
+      "length": 65
+    },
+    "signing_key_1": {
+      "hex": "04a2d8478990945f70a9570ade07b155bc904d2d380647587b12391701309bd10b5990c4c47c47f1f08046cb6f2de0748d1fa7f73790ec9d8dd6372127785288038",
+      "length": 65
+    }
+  }
+}

@@ -1,0 +1,647 @@
+{
+  "_source": "OmniKit BasalScheduleTests.swift (Loop/Trio)",
+  "_task": "EROS-SYNTH-007",
+  "_description": "Test vectors for OmniPod Eros basal schedule commands (SetInsulinScheduleCommand + BasalScheduleExtraCommand)",
+  "_format": {
+    "SetInsulinScheduleCommand": {
+      "typeRaw": "0x1a",
+      "structure": "1a LL NNNNNNNN 00 CCCC HH SSSS PPPP [napp napp...]",
+      "fields": {
+        "LL": "length (1 byte)",
+        "NNNNNNNN": "nonce (4 bytes big-endian)",
+        "00": "basal delivery type marker (vs 0x01 for temp basal)",
+        "CCCC": "checksum (2 bytes)",
+        "HH": "current half-hour segment (0x00 = 00:00-00:30, 0x2f = 23:30-24:00)",
+        "SSSS": "seconds remaining in segment << 3 (2 bytes, divided by 8 for actual seconds)",
+        "PPPP": "pulses remaining in current segment (2 bytes)",
+        "napp": "InsulinTableEntry: n=segments(4 bits), a=alternateSegmentPulse(1 bit), pp=pulses(11 bits)"
+      }
+    },
+    "BasalScheduleExtraCommand": {
+      "typeRaw": "0x13",
+      "structure": "13 LL RR MM NNNN XXXXXXXX [YYYY ZZZZZZZZ]...",
+      "fields": {
+        "LL": "length (1 byte)",
+        "RR": "beep options ((ack<<7) | (completion<<6) | (reminderMinutes & 0x3f))",
+        "MM": "current entry index",
+        "NNNN": "remaining pulses * 10 (2 bytes big-endian)",
+        "XXXXXXXX": "delay until next tenth of pulse in 0.01ms units (4 bytes big-endian)",
+        "YYYY": "total pulses * 10 for entry (2 bytes big-endian)",
+        "ZZZZZZZZ": "delay between pulses in 0.01ms units (4 bytes big-endian)"
+      }
+    },
+    "CancelDeliveryCommand": {
+      "typeRaw": "0x1f",
+      "structure": "1f LL NNNNNNNN TT",
+      "fields": {
+        "LL": "length (always 0x05)",
+        "NNNNNNNN": "nonce (4 bytes big-endian)",
+        "TT": "delivery type + beep type (0x01=basal, noBeepCancel)"
+      }
+    },
+    "InsulinTableEntry": {
+      "checksum": "sum of all bytes: segments + (pulses >> 8) + segments + ((pulses >> 8) + (alternateSegmentPulse ? 1 : 0))",
+      "encoding": "(segments << 12) | (alternateSegmentPulse << 11) | (pulses & 0x7FF)"
+    },
+    "constants": {
+      "pulseSize": 0.05,
+      "pulsesPerUnit": 20,
+      "segmentDurationMinutes": 30,
+      "segmentsPerDay": 48,
+      "minBasalRate": 0.05,
+      "maxBasalRate": 30.0,
+      "basalDeliveryTypeMarker": "0x00"
+    }
+  },
+
+  "insulin_table_entry_vectors": [
+    {
+      "id": "entry_checksum_basic",
+      "description": "InsulinTableEntry checksum calculation (2 segments, 300 pulses, no alternate)",
+      "source": "BasalScheduleTests.swift testInsulinTableEntry()",
+      "input": {
+        "segments": 2,
+        "pulses": 300,
+        "alternateSegmentPulse": false
+      },
+      "expected": {
+        "checksum": "0x5a",
+        "checksumDecimal": 90,
+        "notes": "$01 $2c $01 $2c = 1 + 44 + 1 + 44 = 90"
+      }
+    },
+    {
+      "id": "entry_checksum_alternate",
+      "description": "InsulinTableEntry checksum with alternate segment pulse",
+      "source": "BasalScheduleTests.swift testInsulinTableEntry()",
+      "input": {
+        "segments": 2,
+        "pulses": 260,
+        "alternateSegmentPulse": true
+      },
+      "expected": {
+        "checksum": "0x0b",
+        "checksumDecimal": 11,
+        "notes": "$01 $04 $01 $04 = 1 + 4 + 1 + 5 = 11"
+      }
+    }
+  ],
+
+  "set_basal_schedule_vectors": [
+    {
+      "id": "basal_decode_basic",
+      "description": "Decode SetInsulinScheduleCommand for basal schedule",
+      "source": "BasalScheduleTests.swift testSetBasalScheduleCommand()",
+      "operation": "decode",
+      "hex": "1a1277a055510000622b17080000f800f800f800",
+      "expected": {
+        "type": "SetInsulinScheduleCommand",
+        "nonce": "0x77a05551",
+        "nonceDecimal": 2006996305,
+        "deliveryType": "basalSchedule",
+        "currentSegment": "0x2b",
+        "currentSegmentDecimal": 43,
+        "currentSegmentTime": "21:30",
+        "secondsRemaining": 737,
+        "pulsesRemaining": 0,
+        "tableEntriesCount": 3,
+        "tableEntries": [
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true},
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true},
+          {"segments": 16, "pulses": 0, "alternateSegmentPulse": true}
+        ]
+      }
+    },
+    {
+      "id": "basal_encode_basic",
+      "description": "Encode SetInsulinScheduleCommand for basal schedule (matches decode)",
+      "source": "BasalScheduleTests.swift testSetBasalScheduleCommand()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 0.05, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x77a05551",
+        "currentSegment": "0x2b",
+        "secondsRemaining": 737,
+        "pulsesRemaining": 0
+      },
+      "expected": {
+        "hex": "1a1277a055510000622b17080000f800f800f800"
+      }
+    },
+    {
+      "id": "basal_from_schedule_0_05",
+      "description": "Build SetInsulinScheduleCommand from 0.05 U/hr schedule at 8:15 offset",
+      "source": "BasalScheduleTests.swift testBasalScheduleCommandFromSchedule()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 0.05, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x01020304",
+        "scheduleOffsetHours": 8.25
+      },
+      "expected": {
+        "hex": "1a1201020304000064101c200000f800f800f800",
+        "currentSegment": "0x10",
+        "currentSegmentDecimal": 16,
+        "currentSegmentTime": "08:00",
+        "secondsRemaining": 900,
+        "pulsesRemaining": 0,
+        "tableEntriesCount": 3,
+        "alternateSegmentPulse": true
+      }
+    },
+    {
+      "id": "basal_multi_rate_schedule",
+      "description": "Multi-rate basal schedule (1.05, 0.9, 1.0 U/hr)",
+      "source": "BasalScheduleTests.swift testBasalExtraEncoding()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 1.05, "startTime": 0},
+          {"rate": 0.9, "startTime": 10.5},
+          {"rate": 1.0, "startTime": 18.5}
+        ],
+        "notes": "startTime in hours"
+      },
+      "input": {
+        "nonce": "0x0d6612db",
+        "hh": "0x2e",
+        "ssss": "0x1be8"
+      },
+      "expected": {
+        "hex": "1a140d6612db0003102e1be80005f80a480af009a00a"
+      }
+    },
+    {
+      "id": "basal_1_05_at_1600",
+      "description": "1.05 U/hr flat rate at 16:00",
+      "source": "BasalScheduleTests.swift testBasalExtraEncoding1()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 1.05, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x2a845e17",
+        "hh": "0x20",
+        "ssss": "0x33c0"
+      },
+      "expected": {
+        "hex": "1a122a845e170003142033c00009f80af80af80a"
+      }
+    },
+    {
+      "id": "basal_1_05_at_1747",
+      "description": "1.05 U/hr flat rate at 17:47:27",
+      "source": "BasalScheduleTests.swift testBasalExtraEncoding2()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 1.05, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x0a229e93",
+        "hh": "0x23",
+        "ssss": "0x17a0"
+      },
+      "expected": {
+        "hex": "1a120a229e930002d62317a00004f80af80af80a"
+      }
+    },
+    {
+      "id": "basal_segment_merging",
+      "description": "Schedule with adjacent equal rates that should merge",
+      "source": "BasalScheduleTests.swift testSegmentMerging()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 0.80, "startTime": 0},
+          {"rate": 0.90, "startTime": 3.0},
+          {"rate": 0.85, "startTime": 5.0},
+          {"rate": 0.85, "startTime": 7.5},
+          {"rate": 0.85, "startTime": 12.5},
+          {"rate": 0.70, "startTime": 15.0},
+          {"rate": 0.90, "startTime": 18.0},
+          {"rate": 1.10, "startTime": 20.0}
+        ],
+        "notes": "0.85 entries at 5.0, 7.5, 12.5 should merge"
+      },
+      "input": {
+        "nonce": "0x851072aa",
+        "hh": "0x2a",
+        "ssss": "0x1e50"
+      },
+      "expected": {
+        "hex": "1a1a851072aa0002422a1e50000650083009f808380850073009700b"
+      }
+    },
+    {
+      "id": "basal_rounding_high_rates",
+      "description": "Schedule with rates requiring rounding (2.75, 20.25, 5.00, 10.10, 0.05, 3.50)",
+      "source": "BasalScheduleTests.swift testRounding()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 2.75, "startTime": 0},
+          {"rate": 20.25, "startTime": 1.0},
+          {"rate": 5.00, "startTime": 1.5},
+          {"rate": 10.10, "startTime": 2.0},
+          {"rate": 0.05, "startTime": 2.5},
+          {"rate": 3.50, "startTime": 15.5}
+        ]
+      },
+      "input": {
+        "nonce": "0xc2a32da8",
+        "hh": "0x28",
+        "ssss": "0x1af0"
+      },
+      "expected": {
+        "hex": "1a1ec2a32da800053a281af00010181b00ca003200650001f8008800f0230023"
+      }
+    },
+    {
+      "id": "basal_rounding_low_rates",
+      "description": "Schedule with low rates requiring rounding",
+      "source": "BasalScheduleTests.swift testRounding2()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 0.60, "startTime": 0},
+          {"rate": 0.65, "startTime": 7.5},
+          {"rate": 0.50, "startTime": 8.5},
+          {"rate": 0.65, "startTime": 9.5},
+          {"rate": 0.15, "startTime": 15.5},
+          {"rate": 0.80, "startTime": 16.3}
+        ]
+      },
+      "input": {
+        "nonce": "0x851072aa",
+        "hh": "0x2c",
+        "ssss": "0x2190"
+      },
+      "expected": {
+        "hex": "1a18851072aa00021b2c21900004f00600071005b8061801e008"
+      }
+    },
+    {
+      "id": "basal_13_entries",
+      "description": "Complex 13-entry schedule",
+      "source": "BasalScheduleTests.swift testThirteenEntries()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 1.30, "startTime": 0},
+          {"rate": 0.05, "startTime": 0.5},
+          {"rate": 1.70, "startTime": 2.0},
+          {"rate": 0.85, "startTime": 2.5},
+          {"rate": 1.00, "startTime": 3.0},
+          {"rate": 0.65, "startTime": 7.5},
+          {"rate": 0.50, "startTime": 8.5},
+          {"rate": 0.65, "startTime": 9.5},
+          {"rate": 0.60, "startTime": 10.5},
+          {"rate": 0.65, "startTime": 11.5},
+          {"rate": 1.65, "startTime": 14.0},
+          {"rate": 0.15, "startTime": 15.5},
+          {"rate": 0.85, "startTime": 16.5}
+        ]
+      },
+      "input": {
+        "nonce": "0x851072aa",
+        "hh": "0x27",
+        "ssss": "0x1518"
+      },
+      "expected": {
+        "hex": "1a2a851072aa0001dd2715180003000d280000111809700a180610052806100600072806001118101801e808"
+      }
+    },
+    {
+      "id": "basal_joe_12_entries",
+      "description": "Joe's 12-entry schedule",
+      "source": "BasalScheduleTests.swift testJoe12Entries()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 1.30, "startTime": 0},
+          {"rate": 0.05, "startTime": 0.5},
+          {"rate": 1.70, "startTime": 2.0},
+          {"rate": 0.85, "startTime": 2.5},
+          {"rate": 1.00, "startTime": 3.0},
+          {"rate": 0.65, "startTime": 7.5},
+          {"rate": 0.50, "startTime": 8.5},
+          {"rate": 0.65, "startTime": 9.5},
+          {"rate": 0.60, "startTime": 10.5},
+          {"rate": 0.65, "startTime": 11.5},
+          {"rate": 1.65, "startTime": 14.0},
+          {"rate": 0.85, "startTime": 16.0}
+        ]
+      },
+      "input": {
+        "nonce": "0xf36a23a3",
+        "hh": "0x16",
+        "ssss": "0x3648"
+      },
+      "expected": {
+        "hex": "1a2af36a23a30002351636480005000d280000111809700a180610052806100600072806001128100009e808"
+      }
+    },
+    {
+      "id": "basal_funky_rates",
+      "description": "Schedule with imprecise rates that need rounding",
+      "source": "BasalScheduleTests.swift testFunkyRates()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 1.325, "startTime": 0},
+          {"rate": 0.05, "startTime": 0.5},
+          {"rate": 1.699, "startTime": 2.0},
+          {"rate": 0.850001, "startTime": 2.5},
+          {"rate": 1.02499999, "startTime": 3.0},
+          {"rate": 0.650001, "startTime": 7.5},
+          {"rate": 0.50, "startTime": 8.5},
+          {"rate": 0.675, "startTime": 9.5},
+          {"rate": 0.59999, "startTime": 10.5},
+          {"rate": 0.666, "startTime": 11.5},
+          {"rate": 1.675, "startTime": 14.0},
+          {"rate": 0.849, "startTime": 16.0}
+        ],
+        "notes": "Rates are rounded to nearest 0.05 U/hr"
+      },
+      "input": {
+        "nonce": "0xf36a23a3",
+        "hh": "0x03",
+        "ssss": "0x0ae8"
+      },
+      "expected": {
+        "hex": "1a2af36a23a3000291030ae80000000d280000111809700a180610052806100600072806001128100009e808"
+      }
+    },
+    {
+      "id": "basal_large_continuous",
+      "description": "Large continuous basal rate (24.0 U/hr)",
+      "source": "BasalScheduleTests.swift testLargeContinuousBasal()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 24.0, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x05281983",
+        "hh": "0x01",
+        "ssss": "0x2dc8"
+      },
+      "expected": {
+        "hex": "1a1205281983002eb9012dc800c3f0f0f0f0f0f0"
+      }
+    },
+    {
+      "id": "basal_max_continuous",
+      "description": "Maximum basal rate (30.0 U/hr)",
+      "source": "BasalScheduleTests.swift testMaxContinuousBasal()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 30.0, "startTime": 0}]
+      },
+      "input": {
+        "nonce": "0x06141980",
+        "hh": "0x0c",
+        "ssss": "0x1a00"
+      },
+      "expected": {
+        "hex": "1a12061419800009200c1a00008af12cf12cf12c"
+      }
+    }
+  ],
+
+  "basal_schedule_extra_vectors": [
+    {
+      "id": "extra_decode_3_0",
+      "description": "Decode BasalScheduleExtraCommand for 3.0 U/hr",
+      "source": "BasalScheduleTests.swift testBasalScheduleExtraCommand()",
+      "operation": "decode",
+      "hex": "130e40001aea001e84803840005b8d80",
+      "expected": {
+        "type": "BasalScheduleExtraCommand",
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 0,
+        "currentEntryIndex": 0,
+        "remainingPulses": 689.0,
+        "delayUntilNextTenthOfPulseMs": 20000,
+        "delayUntilNextTenthOfPulseSeconds": 20.0,
+        "rateEntriesCount": 1,
+        "rateEntries": [
+          {
+            "delayBetweenPulsesMs": 60000,
+            "delayBetweenPulsesSeconds": 60.0,
+            "totalPulses": 1440.0,
+            "rate": 3.0,
+            "durationHours": 24.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "extra_encode_3_0",
+      "description": "Encode BasalScheduleExtraCommand for 3.0 U/hr",
+      "source": "BasalScheduleTests.swift testBasalScheduleExtraCommand()",
+      "operation": "encode",
+      "input": {
+        "currentEntryIndex": 0,
+        "remainingPulses": 689,
+        "delayUntilNextTenthOfPulseSeconds": 20,
+        "rate": 3.0,
+        "durationHours": 24,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 0
+      },
+      "expected": {
+        "hex": "130e40001aea01312d003840005b8d80",
+        "notes": "Slight difference in XXXXXXXX field due to encoding precision"
+      }
+    },
+    {
+      "id": "extra_from_schedule_0_05",
+      "description": "BasalScheduleExtraCommand from 0.05 U/hr schedule at 8:15 offset",
+      "source": "BasalScheduleTests.swift testBasalScheduleExtraCommandFromSchedule()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 0.05, "startTime": 0}]
+      },
+      "input": {
+        "scheduleOffsetHours": 8.25,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60
+      },
+      "expected": {
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 60,
+        "currentEntryIndex": 0,
+        "remainingPulses": 15.8,
+        "delayUntilNextTenthOfPulseMinutes": 3.0,
+        "rateEntriesCount": 1,
+        "rateEntry": {
+          "delayBetweenPulsesMinutes": 60,
+          "totalPulses": 24,
+          "rate": 0.05,
+          "durationHours": 24
+        }
+      }
+    },
+    {
+      "id": "extra_multi_rate",
+      "description": "BasalScheduleExtraCommand for multi-rate schedule",
+      "source": "BasalScheduleTests.swift testBasalExtraEncoding()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [
+          {"rate": 1.05, "startTime": 0},
+          {"rate": 0.9, "startTime": 10.5},
+          {"rate": 1.0, "startTime": 18.5}
+        ]
+      },
+      "input": {
+        "hh": "0x2e",
+        "ssss": "0x1be8",
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 0
+      },
+      "expected": {
+        "hex": "131a4002009600a7d8c0089d0105944905a001312d00044c0112a880",
+        "notes": "PDM-captured value"
+      }
+    },
+    {
+      "id": "extra_segment_merging",
+      "description": "BasalScheduleExtraCommand with segment merging",
+      "source": "BasalScheduleTests.swift testSegmentMerging()",
+      "operation": "encode",
+      "expected": {
+        "hex": "132c4005026200455b9c01e0015752a0016801312d0006a40143209601a401885e6d016801312d00037000f9b074",
+        "notes": "PDM-captured value, XXXXXXXX field allows slight precision variance"
+      }
+    },
+    {
+      "id": "extra_13_entries",
+      "description": "BasalScheduleExtraCommand for 13-entry schedule",
+      "source": "BasalScheduleTests.swift testThirteenEntries()",
+      "operation": "encode",
+      "expected": {
+        "hex": "1356400c02c8011abc64008200d34689000f15752a0000aa00a1904b00550143209603840112a880008201a68d13006402255100008201a68d13007801c9c380014501a68d1301ef00a675a2001e07270e0004fb01432096",
+        "notes": "PDM-captured value"
+      }
+    },
+    {
+      "id": "extra_joe_12_entries",
+      "description": "BasalScheduleExtraCommand for Joe's 12-entry schedule",
+      "source": "BasalScheduleTests.swift testJoe12Entries()",
+      "operation": "encode",
+      "expected": {
+        "hex": "13504008003a019bfcc0008200d34689000f15752a0000aa00a1904b00550143209603840112a880008201a68d13006402255100008201a68d13007801c9c380014501a68d13029400a675a2055001432096",
+        "notes": "PDM-captured value"
+      }
+    },
+    {
+      "id": "extra_rounds_to_nearest_second",
+      "description": "BasalScheduleExtraCommand rounds offset to nearest second",
+      "source": "BasalScheduleTests.swift testBasalScheduleExtraCommandRoundsToNearestSecond()",
+      "operation": "encode",
+      "schedule": {
+        "entries": [{"rate": 1.0, "startTime": 0}]
+      },
+      "input": {
+        "hh": "0x2b",
+        "ssss": "0x1b38",
+        "offsetFraction": 0.456,
+        "acknowledgementBeep": false,
+        "completionBeep": true,
+        "programReminderInterval": 0
+      },
+      "expected": {
+        "hex": "130e400001c1006acfc012c00112a880",
+        "notes": "Non-integer seconds are rounded"
+      }
+    },
+    {
+      "id": "extra_large_continuous",
+      "description": "BasalScheduleExtraCommand for 24.0 U/hr",
+      "source": "BasalScheduleTests.swift testLargeContinuousBasal()",
+      "operation": "encode",
+      "expected": {
+        "hex": "13144000f2020003d090fd20000b71b0c4e0000b71b0"
+      }
+    },
+    {
+      "id": "extra_max_continuous",
+      "description": "BasalScheduleExtraCommand for 30.0 U/hr (max rate)",
+      "source": "BasalScheduleTests.swift testMaxContinuousBasal()",
+      "operation": "encode",
+      "expected": {
+        "hex": "131a4000632b00061a80f618000927c0f618000927c04650000927c0"
+      }
+    }
+  ],
+
+  "cancel_basal_vectors": [
+    {
+      "id": "suspend_basal",
+      "description": "Suspend (cancel) basal delivery",
+      "source": "BasalScheduleTests.swift testSuspendBasalCommand()",
+      "operation": "decodeEncode",
+      "hex": "1f056fede14a01",
+      "expected": {
+        "type": "CancelDeliveryCommand",
+        "nonce": "0x6fede14a",
+        "nonceDecimal": 1877860682,
+        "deliveryType": "basal",
+        "beepType": "noBeepCancel",
+        "beepTypeRaw": "0x01"
+      }
+    }
+  ],
+
+  "eros_vs_dash_differences": {
+    "description": "Eros pods have different minimum basal rate constraints vs DASH",
+    "test723ScheduleImport": {
+      "source": "BasalScheduleTests.swift test723ScheduleImport()",
+      "notes": "Test covers both Eros and DASH variants based on Pod.zeroBasalRate setting",
+      "erosVersion": {
+        "description": "Eros version with lowest scheduled basal rate of 0.05 U/hr",
+        "hex_schedule": "1a18ee29db980002242d0cd000017800380230070008f807e807",
+        "hex_extra": "1320000300a8001e8480002815752a000064044aa20000d201885e6d09ab016e3600",
+        "hh": "0x2d",
+        "ssss": "0x0cd0",
+        "nonce": "0xee29db98"
+      },
+      "dashVersion": {
+        "description": "DASH version supports scheduled zero basal rates",
+        "hex_schedule": "1a1c494e532e0002122f0ac00001300000012800380230070008f807e807",
+        "hex_extra": "132c0005000f007a12000003eb49d200001415752a000001eb49d2000064044aa20000d201885e6d09ab016e3600",
+        "hh": "0x2f",
+        "ssss": "0x0ac0",
+        "nonce": "0x494e532e"
+      },
+      "schedule": {
+        "entries": [
+          {"rate": 0.0, "startTime": 0, "notes": "Eros converts to 0.05"},
+          {"rate": 0.03, "startTime": 0.5, "notes": "Rounded to 0.05"},
+          {"rate": 0.075, "startTime": 1.5, "notes": "Rounded to 0.05"},
+          {"rate": 0.0, "startTime": 3.5, "notes": "Eros converts to 0.05"},
+          {"rate": 0.25, "startTime": 4.0},
+          {"rate": 0.725, "startTime": 6.0, "notes": "Rounded to 0.7"},
+          {"rate": 0.78, "startTime": 7.5, "notes": "Rounded to 0.8"}
+        ]
+      }
+    }
+  },
+
+  "python_compat": {
+    "description": "Python parsing helpers for basal schedule commands",
+    "parse_set_basal_schedule": "def parse_basal_schedule(data: bytes) -> dict:\n    \"\"\"Parse SetInsulinScheduleCommand for basal schedule.\"\"\"\n    if len(data) < 14 or data[0] != 0x1a:\n        raise ValueError('Invalid SetInsulinScheduleCommand')\n    \n    length = data[1]\n    nonce = int.from_bytes(data[2:6], 'big')\n    \n    if data[6] != 0x00:\n        raise ValueError('Not a basal schedule (expected 0x00, got temp basal 0x01)')\n    \n    checksum = int.from_bytes(data[7:9], 'big')\n    current_segment = data[9]  # 0x00-0x2f for 00:00-23:30\n    segment_time = f\"{(current_segment // 2):02d}:{(current_segment % 2) * 30:02d}\"\n    seconds_remaining = int.from_bytes(data[10:12], 'big') >> 3\n    pulses_remaining = int.from_bytes(data[12:14], 'big')\n    \n    # Parse table entries (2 bytes each): napp format\n    entries = []\n    idx = 14\n    while idx + 1 < len(data):\n        entry = int.from_bytes(data[idx:idx+2], 'big')\n        segments = (entry >> 12) & 0xF\n        alternate = bool((entry >> 11) & 1)\n        pulses = entry & 0x7FF\n        entries.append({\n            'segments': segments if segments > 0 else 16,\n            'alternateSegmentPulse': alternate,\n            'pulses': pulses\n        })\n        idx += 2\n    \n    return {\n        'nonce': hex(nonce),\n        'checksum': hex(checksum),\n        'currentSegment': current_segment,\n        'currentSegmentTime': segment_time,\n        'secondsRemaining': seconds_remaining,\n        'pulsesRemaining': pulses_remaining,\n        'tableEntries': entries\n    }",
+    "parse_basal_schedule_extra": "def parse_basal_schedule_extra(data: bytes) -> dict:\n    \"\"\"Parse BasalScheduleExtraCommand.\"\"\"\n    if len(data) < 10 or data[0] != 0x13:\n        raise ValueError('Invalid BasalScheduleExtraCommand')\n    \n    length = data[1]\n    beep_options = data[2]\n    ack_beep = bool(beep_options & 0x80)\n    completion_beep = bool(beep_options & 0x40)\n    reminder_interval = beep_options & 0x3f\n    \n    current_entry_index = data[3]\n    remaining_pulses = int.from_bytes(data[4:6], 'big') / 10.0\n    delay_until_next = int.from_bytes(data[6:10], 'big')  # 0.001ms units\n    \n    # Parse rate entries (6 bytes each): YYYY ZZZZZZZZ\n    entries = []\n    idx = 10\n    while idx + 5 < len(data):\n        total_pulses = int.from_bytes(data[idx:idx+2], 'big') / 10.0\n        delay_between = int.from_bytes(data[idx+2:idx+6], 'big')  # 0.001ms units\n        delay_seconds = delay_between / 1000000.0\n        rate = (3600.0 / delay_seconds) * 0.05 if delay_seconds > 0 else 0\n        entries.append({\n            'totalPulses': total_pulses,\n            'delayBetweenPulsesMs': delay_between,\n            'delayBetweenPulsesSeconds': delay_seconds,\n            'rate': round(rate, 2)\n        })\n        idx += 6\n    \n    return {\n        'acknowledgementBeep': ack_beep,\n        'completionBeep': completion_beep,\n        'programReminderInterval': reminder_interval,\n        'currentEntryIndex': current_entry_index,\n        'remainingPulses': remaining_pulses,\n        'delayUntilNextTenthOfPulseMs': delay_until_next,\n        'rateEntries': entries\n    }",
+    "calculate_offset": "def calculate_schedule_offset(hh: int, ssss: int) -> float:\n    \"\"\"Calculate schedule offset from HH and SSSS fields.\n    \n    Args:\n        hh: Current half-hour segment (0x00-0x2f)\n        ssss: Seconds remaining << 3\n    \n    Returns:\n        Offset in hours from midnight\n    \"\"\"\n    segment_minutes = (hh + 1) * 30\n    seconds_remaining = ssss / 8\n    offset_minutes = segment_minutes - (seconds_remaining / 60)\n    return offset_minutes / 60"
+  }
+}

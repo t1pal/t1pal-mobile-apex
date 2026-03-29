@@ -1,0 +1,237 @@
+{
+  "_source": "NightscoutKit TreatmentFactory + TreatmentDeduplicator (T1Pal)",
+  "_task": "NS-SESSION-002",
+  "_description": "Full treatments sync sequence: fetch → dedupe → upload → confirm",
+  "_format": {
+    "session": "Complete TX/RX sequence for bidirectional treatments sync",
+    "endpoints": {
+      "GET /api/v1/treatments": "Fetch existing treatments with optional filters",
+      "POST /api/v1/treatments": "Upload new treatments",
+      "PUT /api/v1/treatments": "Update existing treatment by _id"
+    },
+    "deduplication": "Client-side dedup by identifier field",
+    "event_types": "See treatment_event_types array for full list"
+  },
+  "test_vectors": [
+    {
+      "id": "treatments_sync_full_sequence",
+      "description": "Complete sync: fetch recent treatments, upload insulin + carbs",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/treatments",
+          "query": "count=100&find[created_at][$gte]=2026-02-14T00:00:00Z",
+          "headers": {
+            "api-secret": "sha1-hash-of-secret"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "count": 12,
+            "sample_treatments": [
+              {
+                "_id": "treat001",
+                "eventType": "Temp Basal",
+                "created_at": "2026-02-14T01:00:00.000Z",
+                "rate": 0.8,
+                "duration": 30,
+                "absolute": 0.8,
+                "enteredBy": "Loop",
+                "identifier": "Loop:Temp Basal:2026-02-14T01:00:00.000Z"
+              },
+              {
+                "_id": "treat002",
+                "eventType": "Correction Bolus",
+                "created_at": "2026-02-14T01:30:00.000Z",
+                "insulin": 1.5,
+                "enteredBy": "Loop",
+                "identifier": "Loop:Correction Bolus:2026-02-14T01:30:00.000Z"
+              }
+            ]
+          }
+        },
+        {
+          "step": 3,
+          "action": "dedupe",
+          "description": "Client compares local treatments against fetched",
+          "local_count": 15,
+          "remote_count": 12,
+          "new_count": 3
+        },
+        {
+          "step": 4,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Meal Bolus",
+              "created_at": "2026-02-14T02:00:00.000Z",
+              "insulin": 3.0,
+              "carbs": 45,
+              "enteredBy": "T1Pal",
+              "identifier": "T1Pal:Meal Bolus:2026-02-14T02:00:00.000Z"
+            },
+            {
+              "eventType": "Temp Basal",
+              "created_at": "2026-02-14T02:30:00.000Z",
+              "rate": 1.2,
+              "duration": 30,
+              "absolute": 1.2,
+              "enteredBy": "T1Pal",
+              "identifier": "T1Pal:Temp Basal:2026-02-14T02:30:00.000Z"
+            },
+            {
+              "eventType": "Carb Correction",
+              "created_at": "2026-02-14T02:45:00.000Z",
+              "carbs": 15,
+              "enteredBy": "T1Pal",
+              "identifier": "T1Pal:Carb Correction:2026-02-14T02:45:00.000Z"
+            }
+          ]
+        },
+        {
+          "step": 5,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 3,
+            "deduped": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "treatments_update_existing",
+      "description": "Update an existing treatment (e.g., correct carb entry)",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "PUT",
+          "path": "/api/v1/treatments",
+          "body": {
+            "_id": "treat002",
+            "eventType": "Correction Bolus",
+            "created_at": "2026-02-14T01:30:00.000Z",
+            "insulin": 1.75,
+            "notes": "Updated dose",
+            "enteredBy": "T1Pal",
+            "identifier": "Loop:Correction Bolus:2026-02-14T01:30:00.000Z"
+          }
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "n": 1,
+            "nModified": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "treatments_by_event_type",
+      "description": "Fetch only temp basal treatments",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "GET",
+          "path": "/api/v1/treatments",
+          "query": "find[eventType]=Temp Basal&count=50"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "count": 24,
+            "note": "24 temp basal records in last 12 hours"
+          }
+        }
+      ]
+    },
+    {
+      "id": "treatments_bolus_wizard",
+      "description": "Upload bolus wizard calculation record",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "method": "POST",
+          "path": "/api/v1/treatments",
+          "body": [
+            {
+              "eventType": "Bolus Wizard",
+              "created_at": "2026-02-14T02:00:00.000Z",
+              "bolusCalculation": {
+                "carbs": 45,
+                "ic": 10,
+                "bg": 180,
+                "isf": 50,
+                "target": 110,
+                "carbRatio": 4.5,
+                "correctionBolus": 1.4,
+                "foodBolus": 4.5,
+                "totalBolus": 5.9,
+                "iob": 0.5,
+                "finalBolus": 5.4
+              },
+              "insulin": 5.4,
+              "carbs": 45,
+              "enteredBy": "T1Pal"
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "status": 200,
+          "body": {
+            "inserted": 1
+          }
+        }
+      ]
+    }
+  ],
+  "treatment_event_types": [
+    "Temp Basal",
+    "Correction Bolus",
+    "Meal Bolus",
+    "Carb Correction",
+    "BG Check",
+    "Announcement",
+    "Note",
+    "Question",
+    "Exercise",
+    "Site Change",
+    "Sensor Start",
+    "Sensor Change",
+    "Pump Battery Change",
+    "Insulin Change",
+    "Profile Switch",
+    "Temporary Target",
+    "OpenAPS Offline",
+    "Suspend Pump",
+    "Resume Pump",
+    "Bolus Wizard",
+    "Combo Bolus",
+    "Snack Bolus",
+    "D.A.D. Alert"
+  ],
+  "treatment_schema": {
+    "required": ["eventType", "created_at"],
+    "optional": ["_id", "insulin", "carbs", "duration", "rate", "absolute", "enteredBy", "notes", "identifier", "glucose", "glucoseType", "reason"],
+    "temp_basal_fields": ["rate", "duration", "absolute", "percent"],
+    "bolus_fields": ["insulin", "preBolus", "programmed"],
+    "carb_fields": ["carbs", "absorptionTime"]
+  }
+}

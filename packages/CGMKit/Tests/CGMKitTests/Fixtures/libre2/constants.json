@@ -1,0 +1,46 @@
+{
+  "_comment": "Libre 2 Decryption Protocol Constants",
+  "_source": "LibreTransmitter (LoopKit)",
+  "_updated": "2026-02-08",
+  
+  "cryptoKey": {
+    "values": ["0xA0C5", "0x6860", "0x0000", "0x14C6"],
+    "description": "Key constants for processCrypto XOR operations"
+  },
+  
+  "sensorTypes": {
+    "libre2": {
+      "argXor": "0x44",
+      "description": "EU/International Libre 2"
+    },
+    "libreUS14day": {
+      "headerFooterArg": "0xcadc",
+      "description": "US 14-day Libre 2"
+    }
+  },
+  
+  "framDecryption": {
+    "blockCount": 43,
+    "blockSize": 8,
+    "totalSize": 344,
+    "headerBlocks": [0, 1, 2],
+    "footerBlocks": [40, 41, 42]
+  },
+  
+  "bleDecryption": {
+    "encryptedSize": 46,
+    "decryptedSize": 44,
+    "headerBytes": 2,
+    "crcBytes": 2,
+    "keystreamBlockSize": 8,
+    "keystreamRounds": 8
+  },
+  
+  "processCryptoConstants": {
+    "xorMagic1": "0x4163",
+    "xorMagic2": "0x4344",
+    "prepareVariablesMagic": "0x241a",
+    "usefulFunctionX": "0x1b",
+    "usefulFunctionY": "0x1b6a"
+  }
+}

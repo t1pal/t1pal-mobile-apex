@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "source": "xDrip libkeks Packet.java analysis",
+  "trace": "PROTO-CMP-002",
+  
+  "round1_packet": {
+    "description": "Client sends g^x1 with ZKP proving knowledge of x1",
+    "contents": {
+      "point1": {
+        "description": "g^x1 - public key derived from random x1",
+        "format": "uncompressed (x, y coordinates)"
+      },
+      "point2": {
+        "description": "V = g^v - ZKP commitment using random v",
+        "format": "uncompressed (x, y coordinates)"
+      },
+      "zkp_value": {
+        "description": "r = v - hash(G, V, g^x1, party_id) * x1 mod n",
+        "format": "32-byte big-endian scalar"
+      }
+    },
+    "validation": {
+      "check_point_on_curve": true,
+      "check_point_not_identity": true,
+      "verify_zkp": "g^r * (g^x1)^hash == V"
+    }
+  },
+  
+  "round2_packet": {
+    "description": "Client sends g^x2 with ZKP proving knowledge of x2",
+    "contents": {
+      "point1": {
+        "description": "g^x2 - public key derived from random x2",
+        "format": "uncompressed (x, y coordinates)"
+      },
+      "point2": {
+        "description": "V = g^v - ZKP commitment using random v",
+        "format": "uncompressed (x, y coordinates)"
+      },
+      "zkp_value": {
+        "description": "r = v - hash(G, V, g^x2, party_id) * x2 mod n",
+        "format": "32-byte big-endian scalar"
+      }
+    }
+  },
+  
+  "round3_packet": {
+    "description": "Client sends A with ZKP proving knowledge of x2*s",
+    "contents": {
+      "point1": {
+        "description": "A = (g^x1 + g^x3 + g^x4)^(x2*s) where s is password",
+        "formula": "A = base^(x2 * password)",
+        "base": "sum of round1 points from both parties + remote round2 point"
+      },
+      "point2": {
+        "description": "V = base^v - ZKP commitment",
+        "format": "uncompressed (x, y coordinates)"
+      },
+      "zkp_value": {
+        "description": "r = v - hash(base, V, A, party_id) * (x2*s) mod n",
+        "format": "32-byte big-endian scalar"
+      }
+    },
+    "note": "The password 's' is involved in both the main computation and ZKP"
+  },
+  
+  "key_derivation": {
+    "description": "Derive shared secret after round 3 validation",
+    "steps": [
+      {
+        "step": 1,
+        "compute": "pms = x4^(x2*s) where x4 is remote round2 public key",
+        "description": "Pre-master secret point"
+      },
+      {
+        "step": 2,
+        "compute": "shared = B - pms where B is remote round3 point",
+        "description": "Remove password component"
+      },
+      {
+        "step": 3,
+        "compute": "K = SHA256(shared.x)",
+        "description": "Hash X coordinate of shared point"
+      },
+      {
+        "step": 4,
+        "compute": "session_key = K[0:16]",
+        "description": "Truncate to 16 bytes for AES-128"
+      }
+    ]
+  }
+}

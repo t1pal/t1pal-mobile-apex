@@ -1,0 +1,251 @@
+{
+  "_source": "NightscoutKit NightscoutSocket + ControlPlaneEventStream (T1Pal)",
+  "_task": "NS-SESSION-004",
+  "_description": "WebSocket connect → subscribe → events sequence",
+  "_format": {
+    "session": "Complete Socket.IO sequence for real-time data streaming",
+    "protocol": "Socket.IO v4 over WebSocket",
+    "namespace": "/",
+    "events": "See socket_events array for full list"
+  },
+  "test_vectors": [
+    {
+      "id": "websocket_connect_sequence",
+      "description": "Full connection handshake and authentication",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "transport": "polling",
+          "method": "GET",
+          "path": "/socket.io/",
+          "query": "EIO=4&transport=polling",
+          "description": "Initial polling request for session ID"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "transport": "polling",
+          "body": "0{\"sid\":\"abc123xyz\",\"upgrades\":[\"websocket\"],\"pingInterval\":25000,\"pingTimeout\":20000}",
+          "parsed": {
+            "packet_type": 0,
+            "sid": "abc123xyz",
+            "upgrades": ["websocket"],
+            "pingInterval": 25000,
+            "pingTimeout": 20000
+          }
+        },
+        {
+          "step": 3,
+          "direction": "tx",
+          "transport": "websocket",
+          "path": "/socket.io/",
+          "query": "EIO=4&transport=websocket&sid=abc123xyz",
+          "frame": "2probe",
+          "description": "WebSocket upgrade probe"
+        },
+        {
+          "step": 4,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "3probe",
+          "description": "Server acknowledges probe"
+        },
+        {
+          "step": 5,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "5",
+          "description": "Upgrade complete"
+        },
+        {
+          "step": 6,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "40",
+          "description": "Socket.IO CONNECT packet for default namespace"
+        },
+        {
+          "step": 7,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "40{\"sid\":\"socket123\"}",
+          "description": "Socket.IO connection acknowledgment"
+        },
+        {
+          "step": 8,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "42[\"authorize\",{\"client\":\"T1Pal\",\"secret\":\"sha1-hash\",\"token\":null}]",
+          "description": "Send authorization"
+        },
+        {
+          "step": 9,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"authorized\",{\"read\":true,\"write\":true,\"admin\":false}]",
+          "description": "Authorization response with permissions"
+        }
+      ]
+    },
+    {
+      "id": "websocket_subscribe_events",
+      "description": "Subscribe to data streams and receive events",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "42[\"subscribe\",{\"collections\":[\"entries\",\"treatments\",\"devicestatus\"]}]",
+          "description": "Subscribe to data collections"
+        },
+        {
+          "step": 2,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"subscribed\",{\"collections\":[\"entries\",\"treatments\",\"devicestatus\"]}]",
+          "description": "Subscription confirmed"
+        },
+        {
+          "step": 3,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"dataUpdate\",{\"sgvs\":[{\"_id\":\"entry001\",\"sgv\":145,\"direction\":\"Flat\",\"date\":1739500800000}]}]",
+          "description": "New SGV entry pushed",
+          "parsed_event": {
+            "type": "dataUpdate",
+            "collection": "sgvs",
+            "count": 1
+          }
+        },
+        {
+          "step": 4,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"dataUpdate\",{\"treatments\":[{\"_id\":\"treat001\",\"eventType\":\"Temp Basal\",\"rate\":1.2}]}]",
+          "description": "New treatment pushed"
+        }
+      ]
+    },
+    {
+      "id": "websocket_ping_pong",
+      "description": "Keep-alive ping/pong cycle",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "2",
+          "description": "Engine.IO PING from server",
+          "timing": "Every pingInterval (25s)"
+        },
+        {
+          "step": 2,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "3",
+          "description": "Engine.IO PONG response",
+          "timing": "Must respond within pingTimeout (20s)"
+        }
+      ]
+    },
+    {
+      "id": "websocket_disconnect_reconnect",
+      "description": "Handle disconnect and reconnection",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "rx",
+          "transport": "websocket",
+          "event": "close",
+          "code": 1006,
+          "reason": "Connection lost",
+          "description": "Unexpected disconnect"
+        },
+        {
+          "step": 2,
+          "action": "reconnect",
+          "description": "Client waits with exponential backoff",
+          "delays": [1000, 2000, 4000, 8000, 16000],
+          "max_delay": 30000
+        },
+        {
+          "step": 3,
+          "direction": "tx",
+          "note": "Repeat connect sequence from step 1 of websocket_connect_sequence"
+        },
+        {
+          "step": 4,
+          "direction": "tx",
+          "transport": "websocket",
+          "frame": "42[\"subscribe\",{\"collections\":[\"entries\",\"treatments\",\"devicestatus\"]}]",
+          "description": "Re-subscribe after reconnect"
+        }
+      ]
+    },
+    {
+      "id": "websocket_announcement",
+      "description": "Receive careportal announcement",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"announcement\",{\"message\":\"System update at midnight\",\"level\":\"info\",\"isAnnouncement\":true}]"
+        }
+      ]
+    },
+    {
+      "id": "websocket_alarm",
+      "description": "Receive urgent alarm notification",
+      "steps": [
+        {
+          "step": 1,
+          "direction": "rx",
+          "transport": "websocket",
+          "frame": "42[\"alarm\",{\"level\":2,\"title\":\"Urgent Low\",\"message\":\"BG 55 mg/dL\",\"group\":\"default\"}]",
+          "parsed_event": {
+            "type": "alarm",
+            "level": 2,
+            "urgency": "urgent_low"
+          }
+        }
+      ]
+    }
+  ],
+  "socket_events": {
+    "client_to_server": [
+      "authorize",
+      "subscribe",
+      "unsubscribe"
+    ],
+    "server_to_client": [
+      "authorized",
+      "subscribed",
+      "dataUpdate",
+      "announcement",
+      "alarm",
+      "urgent",
+      "clear_alarm",
+      "notification"
+    ]
+  },
+  "engine_io_packets": {
+    "0": "OPEN",
+    "1": "CLOSE", 
+    "2": "PING",
+    "3": "PONG",
+    "4": "MESSAGE",
+    "5": "UPGRADE",
+    "6": "NOOP"
+  },
+  "socket_io_packets": {
+    "0": "CONNECT",
+    "1": "DISCONNECT",
+    "2": "EVENT",
+    "3": "ACK",
+    "4": "CONNECT_ERROR",
+    "5": "BINARY_EVENT",
+    "6": "BINARY_ACK"
+  }
+}

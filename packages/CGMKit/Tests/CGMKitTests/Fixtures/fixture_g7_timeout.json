@@ -1,0 +1,245 @@
+{
+  "session_id": "SESSION-G7-TIMEOUT-001",
+  "session_name": "Dexcom G7 Timeout Scenarios",
+  "description": "Synthesized timeout conditions for G7 BLE connection flow. Used for testing retry logic and timeout handling.",
+  "source": "Synthesized from fixture_g7_connect.json timing specifications",
+  "schema_version": "2.0.0",
+  "hardware_validated": false,
+  "trace": "G7-FIX-014",
+  "created": "2026-02-16",
+
+  "timing_specs": {
+    "discovery_timeout_s": 2.0,
+    "write_timeout_s": 1.0,
+    "command_timeout_s": 2.0,
+    "scan_delay_after_disconnect_s": 2.0,
+    "jpake_round_timeout_s": 5.0,
+    "source": "externals/G7SensorKit/G7SensorKit/G7CGMManager/G7PeripheralManager.swift"
+  },
+
+  "timeout_scenarios": [
+    {
+      "scenario_id": "TIMEOUT-001",
+      "name": "Scan timeout - no sensor found",
+      "description": "No G7 sensor advertisement detected within scan window",
+      "trigger_state": "scanning",
+      "timeout_after_s": 30.0,
+      "error": {
+        "type": "CGMError.sensorNotFound",
+        "message": "No Dexcom G7 sensor found",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "scanning → idle",
+        "callback": "onScanTimeout()",
+        "retry_strategy": "User-initiated rescan"
+      },
+      "test_setup": {
+        "mock_action": "Return empty scan results until timeout",
+        "mock_duration_s": 30.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-002",
+      "name": "Connection timeout",
+      "description": "BLE connection to peripheral fails to establish",
+      "trigger_state": "connecting",
+      "timeout_after_s": 10.0,
+      "error": {
+        "type": "CGMError.connectionFailed",
+        "message": "Failed to connect to sensor",
+        "ble_error_code": "CBError.connectionTimeout",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onConnectionFailed(error:)",
+        "retry_strategy": "Automatic retry after scan_delay_after_disconnect_s"
+      },
+      "test_setup": {
+        "mock_action": "Never call centralManager:didConnect:peripheral",
+        "mock_duration_s": 10.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-003",
+      "name": "Service discovery timeout",
+      "description": "Peripheral connected but services not discovered",
+      "trigger_state": "connecting",
+      "timeout_after_s": 5.0,
+      "error": {
+        "type": "CGMError.serviceDiscoveryFailed",
+        "message": "Failed to discover CGM service",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "connecting → error",
+        "callback": "onServiceDiscoveryFailed()",
+        "retry_strategy": "Disconnect and retry connection"
+      },
+      "test_setup": {
+        "mock_action": "Connect but never call peripheral:didDiscoverServices:",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-004",
+      "name": "J-PAKE Round 1 timeout",
+      "description": "No response to Round 1 authentication message",
+      "trigger_state": "pairing",
+      "timeout_after_s": 5.0,
+      "tx_sent": {
+        "opcode": "0x02",
+        "opcode_name": "AuthRound1",
+        "description": "J-PAKE Round 1 sent, awaiting response"
+      },
+      "error": {
+        "type": "CGMError.authenticationTimeout",
+        "message": "Authentication timed out during Round 1",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "pairing → error",
+        "callback": "onAuthTimeout(round: 1)",
+        "retry_strategy": "Disconnect and reconnect"
+      },
+      "test_setup": {
+        "mock_action": "Write AuthRound1, never send notification response",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-005",
+      "name": "J-PAKE Round 2 timeout",
+      "description": "No response to Round 2 authentication message",
+      "trigger_state": "authenticating",
+      "timeout_after_s": 5.0,
+      "tx_sent": {
+        "opcode": "0x03",
+        "opcode_name": "AuthRound2",
+        "description": "J-PAKE Round 2 sent, awaiting response"
+      },
+      "error": {
+        "type": "CGMError.authenticationTimeout",
+        "message": "Authentication timed out during Round 2",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "authenticating → error",
+        "callback": "onAuthTimeout(round: 2)",
+        "retry_strategy": "Disconnect and reconnect"
+      },
+      "test_setup": {
+        "mock_action": "Complete Round 1, write AuthRound2, never send response",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-006",
+      "name": "J-PAKE confirmation timeout",
+      "description": "No response to confirmation message",
+      "trigger_state": "authenticating",
+      "timeout_after_s": 5.0,
+      "tx_sent": {
+        "opcode": "0x04",
+        "opcode_name": "AuthConfirm",
+        "description": "Confirmation hash sent, awaiting response"
+      },
+      "error": {
+        "type": "CGMError.authenticationTimeout",
+        "message": "Authentication timed out during confirmation",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "authenticating → error",
+        "callback": "onAuthTimeout(round: 3)",
+        "retry_strategy": "Disconnect and reconnect"
+      },
+      "test_setup": {
+        "mock_action": "Complete Round 1-2, write AuthConfirm, never send response",
+        "mock_duration_s": 5.0
+      }
+    },
+    {
+      "scenario_id": "TIMEOUT-007",
+      "name": "Glucose request timeout",
+      "description": "No response to glucose reading request after authentication",
+      "trigger_state": "streaming",
+      "timeout_after_s": 2.0,
+      "tx_sent": {
+        "opcode": "0x4E",
+        "opcode_name": "GlucoseTx",
+        "description": "Glucose request sent"
+      },
+      "error": {
+        "type": "CGMError.commandTimeout",
+        "message": "Glucose request timed out",
+        "recoverable": true
+      },
+      "expected_behavior": {
+        "state_transition": "streaming (retry) → streaming or error",
+        "callback": "onCommandTimeout()",
+        "retry_strategy": "Retry command up to 3 times"
+      },
+      "test_setup": {
+        "mock_action": "Authenticate successfully, write GlucoseTx, never send GlucoseRx",
+        "mock_duration_s": 2.0
+      }
+    }
+  ],
+
+  "retry_configuration": {
+    "max_connection_retries": 3,
+    "max_auth_retries": 2,
+    "max_command_retries": 3,
+    "retry_delay_s": 2.0,
+    "exponential_backoff": false,
+    "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/DexcomG7Manager.swift"
+  },
+
+  "test_vectors": [
+    {
+      "name": "Timeout error construction",
+      "scenario": "TIMEOUT-004",
+      "expected_error_code": "authenticationTimeout",
+      "expected_round": 1,
+      "expected_message": "Authentication timed out during Round 1"
+    },
+    {
+      "name": "State machine on timeout",
+      "initial_state": "pairing",
+      "timeout_event": "jpake_round1_timeout",
+      "expected_state": "error",
+      "cleanup_actions": ["cancelPendingWrite", "disconnectPeripheral"]
+    },
+    {
+      "name": "Retry count tracking",
+      "scenario": "TIMEOUT-002",
+      "retry_sequence": [
+        { "attempt": 1, "result": "timeout", "delay_before_next_s": 2.0 },
+        { "attempt": 2, "result": "timeout", "delay_before_next_s": 2.0 },
+        { "attempt": 3, "result": "timeout", "delay_before_next_s": null }
+      ],
+      "final_state": "error",
+      "final_error": "CGMError.connectionFailed(retries: 3)"
+    }
+  ],
+
+  "edge_cases": [
+    {
+      "name": "Timeout during active write",
+      "description": "BLE write operation times out mid-transfer",
+      "handling": "Cancel write, mark characteristic as stale"
+    },
+    {
+      "name": "Timeout after partial response",
+      "description": "Received partial J-PAKE response before timeout",
+      "handling": "Discard partial data, treat as timeout"
+    },
+    {
+      "name": "System sleep during connection",
+      "description": "Device sleeps during BLE operation",
+      "handling": "Treat as timeout on wake, reconnect"
+    }
+  ]
+}

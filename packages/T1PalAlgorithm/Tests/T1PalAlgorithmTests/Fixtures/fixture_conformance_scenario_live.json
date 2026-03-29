@@ -1,0 +1,40 @@
+{
+  "scenario": "live_capture_high_bg_correction",
+  "description": "Real Loop user data: BG 234 (flat), IOB 3.6U, high temp basals for correction",
+  "captured_at": "2026-02-19T05:55:00Z",
+  "source": "Nightscout via ns_url.env",
+  "data_files": {
+    "entries": "fixture_ns_entries_live.json",
+    "devicestatus": "fixture_ns_devicestatus_live.json", 
+    "treatments": "fixture_ns_treatments_live.json",
+    "profile": "fixture_ns_profile_live.json"
+  },
+  "expected_context": {
+    "glucose": 234,
+    "trend": "Flat",
+    "iob": 3.64,
+    "cob": 0,
+    "isf": 40,
+    "target": 97,
+    "basal": 1.8,
+    "enacted_rate": 1.4,
+    "glucose_history_count": 36
+  },
+  "notes": [
+    "High BG (234) with flat trend",
+    "Already significant IOB (3.6U) from prior corrections",
+    "Loop enacted 1.4 U/hr (below max 6.0)",
+    "Good test case for algorithm comparison"
+  ],
+  "data_gaps_context": {
+    "description": "deviceStatus may have gaps when Loop fails to complete a cycle",
+    "causes": [
+      "Transient pump connectivity/signal issues (RileyLink/BLE)",
+      "Transient CGM connectivity issues",
+      "Loop app backgrounded or suspended",
+      "Pump not responding in time"
+    ],
+    "handling": "CLI shows 'NS observed: (no data)' for time slots without matching deviceStatus",
+    "example_failure": "pumpManagerError[\"detail\": \"communication\", \"error\": \"Pump did not respond in time\"]"
+  }
+}

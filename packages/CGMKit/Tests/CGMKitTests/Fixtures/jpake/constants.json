@@ -1,0 +1,72 @@
+{
+  "version": "1.0",
+  "source": "xDrip libkeks + DiaBLE analysis",
+  "trace": "PROTO-CMP-002",
+  
+  "curve": {
+    "name": "secp256r1",
+    "also_known_as": ["P-256", "prime256v1"],
+    "field_size_bits": 256,
+    "field_size_bytes": 32,
+    "generator": {
+      "x_hex": "6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296",
+      "y_hex": "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"
+    },
+    "order_n_hex": "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+    "cofactor": 1
+  },
+  
+  "packet_format": {
+    "total_size": 160,
+    "layout": [
+      { "name": "point1_x", "offset": 0, "size": 32, "description": "Public key point 1 X coordinate" },
+      { "name": "point1_y", "offset": 32, "size": 32, "description": "Public key point 1 Y coordinate" },
+      { "name": "point2_x", "offset": 64, "size": 32, "description": "ZKP commitment V = g^v X coordinate" },
+      { "name": "point2_y", "offset": 96, "size": 32, "description": "ZKP commitment V = g^v Y coordinate" },
+      { "name": "zkp_hash", "offset": 128, "size": 32, "description": "ZKP exponent r = v - hash * x mod n" }
+    ]
+  },
+  
+  "party_identifiers": {
+    "client_alice_hex": "36C69656E647",
+    "server_bob_hex": "375627675627",
+    "note": "Partial encodings of 'client' and 'server'"
+  },
+  
+  "password_derivation": {
+    "4_digit": {
+      "format": "raw_utf8",
+      "example_input": "1234",
+      "example_output_hex": "31323334"
+    },
+    "6_digit": {
+      "format": "prefix_00_utf8",
+      "prefix_hex": "3030",
+      "example_input": "123456",
+      "example_output_hex": "3030313233343536"
+    }
+  },
+  
+  "zkp_hash_input": {
+    "description": "SHA-256 of length-prefixed values",
+    "format": [
+      { "field": "generator_g", "prefix": "4-byte length big-endian" },
+      { "field": "commitment_gv", "prefix": "4-byte length big-endian" },
+      { "field": "public_key_gx", "prefix": "4-byte length big-endian" },
+      { "field": "party_id", "prefix": "4-byte length big-endian" }
+    ],
+    "output": "SHA-256 hash mod curve order n"
+  },
+  
+  "characteristic_uuids": {
+    "authentication": "F8083535-849E-531C-C594-30F1F86A4EA5",
+    "control": "F8083534-849E-531C-C594-30F1F86A4EA5",
+    "jpake": "F8083538-849E-531C-C594-30F1F86A4EA5"
+  },
+  
+  "opcodes": {
+    "exchange_pake_payload_phase0": "0A00",
+    "exchange_pake_payload_phase1": "0A01",
+    "exchange_pake_payload_phase2": "0A02"
+  }
+}

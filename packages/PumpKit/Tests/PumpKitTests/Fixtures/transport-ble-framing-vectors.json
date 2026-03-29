@@ -1,0 +1,148 @@
+{
+  "description": "BLE transport layer framing test vectors",
+  "trace": "TRANSPORT-010",
+  "created": "2026-02-17",
+  "source": "TRANSPORT-LAYER-REFERENCE.md Section 1",
+  
+  "write_modes": {
+    "description": "Write type selection based on operation type",
+    "vectors": [
+      {
+        "id": "WM-001",
+        "operation": "authentication_command",
+        "write_type": "withResponse",
+        "reason": "Critical command requires ACK",
+        "example_characteristic": "F8083535-849E-531C-C594-30F1F86A4EA5"
+      },
+      {
+        "id": "WM-002",
+        "operation": "glucose_request",
+        "write_type": "withResponse",
+        "reason": "Command expects response data",
+        "example_characteristic": "F8083533-849E-531C-C594-30F1F86A4EA5"
+      },
+      {
+        "id": "WM-003",
+        "operation": "rileylink_command",
+        "write_type": "withResponse",
+        "reason": "All RileyLink commands require response",
+        "example_characteristic": "C842E849-5028-42E2-867C-016ADADA9155"
+      },
+      {
+        "id": "WM-004",
+        "operation": "streaming_notification_enable",
+        "write_type": "withResponse",
+        "reason": "setNotifyValue requires confirmation",
+        "example_characteristic": "any_notify_characteristic"
+      }
+    ]
+  },
+  
+  "notification_subscription": {
+    "description": "Notification vs indication handling",
+    "vectors": [
+      {
+        "id": "NS-001",
+        "characteristic": "glucose_communication",
+        "uuid": "F8083533-849E-531C-C594-30F1F86A4EA5",
+        "property": "notify",
+        "action": "setNotifyValue(true)",
+        "expected_callback": "didUpdateNotificationStateFor"
+      },
+      {
+        "id": "NS-002",
+        "characteristic": "control_indicate",
+        "uuid": "F8083534-849E-531C-C594-30F1F86A4EA5",
+        "property": "indicate",
+        "action": "setNotifyValue(true)",
+        "expected_callback": "didUpdateNotificationStateFor",
+        "note": "Indication requires ACK, CoreBluetooth handles automatically"
+      },
+      {
+        "id": "NS-003",
+        "characteristic": "rileylink_response",
+        "uuid": "6E6C7910-B89E-43A5-A0FE-50C5E2B81F4A",
+        "property": "notify",
+        "action": "setNotifyValue(true)",
+        "expected_callback": "didUpdateNotificationStateFor"
+      }
+    ]
+  },
+  
+  "mtu_handling": {
+    "description": "MTU negotiation and chunking",
+    "vectors": [
+      {
+        "id": "MTU-001",
+        "platform": "iOS",
+        "default_mtu": 185,
+        "max_mtu": 512,
+        "negotiation": "automatic_by_CoreBluetooth",
+        "chunking_responsibility": "application_layer"
+      },
+      {
+        "id": "MTU-002",
+        "platform": "macOS",
+        "default_mtu": 185,
+        "max_mtu": 512,
+        "negotiation": "automatic_by_CoreBluetooth",
+        "chunking_responsibility": "application_layer"
+      },
+      {
+        "id": "MTU-003",
+        "scenario": "rileylink_max_packet",
+        "max_payload": 220,
+        "note": "RileyLink firmware limits, not BLE MTU"
+      }
+    ]
+  },
+  
+  "connection_states": {
+    "description": "BLE connection state transitions",
+    "central_states": [
+      {"value": 0, "name": "unknown", "can_scan": false},
+      {"value": 1, "name": "resetting", "can_scan": false},
+      {"value": 2, "name": "unsupported", "can_scan": false},
+      {"value": 3, "name": "unauthorized", "can_scan": false},
+      {"value": 4, "name": "poweredOff", "can_scan": false},
+      {"value": 5, "name": "poweredOn", "can_scan": true}
+    ],
+    "peripheral_states": [
+      {"value": 0, "name": "disconnected"},
+      {"value": 1, "name": "connecting"},
+      {"value": 2, "name": "connected"},
+      {"value": 3, "name": "disconnecting"}
+    ]
+  },
+  
+  "retry_policies": {
+    "description": "Exponential backoff configurations",
+    "presets": [
+      {
+        "name": "bleDefault",
+        "base_delay_ms": 1000,
+        "max_delay_ms": 30000,
+        "max_attempts": 5,
+        "multiplier": 2.0,
+        "jitter": "decorrelated"
+      },
+      {
+        "name": "aggressive",
+        "base_delay_ms": 500,
+        "max_delay_ms": 10000,
+        "max_attempts": 10,
+        "multiplier": 1.5,
+        "jitter": "full"
+      },
+      {
+        "name": "conservative",
+        "base_delay_ms": 2000,
+        "max_delay_ms": 120000,
+        "max_attempts": 3,
+        "multiplier": 3.0,
+        "jitter": "equal"
+      }
+    ],
+    "formula": "delay = min(base_delay * (multiplier ^ attempt), max_delay) + jitter"
+  }
+}

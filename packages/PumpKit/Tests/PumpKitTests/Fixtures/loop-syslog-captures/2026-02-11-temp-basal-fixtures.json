@@ -1,0 +1,114 @@
+{
+  "metadata": {
+    "captureDate": "2026-02-11T08:32:00Z",
+    "source": "Protocol documentation synthesis",
+    "type": "temp-basal-command-fixture",
+    "pump": {
+      "model": "Medtronic 515",
+      "serial": "208850"
+    },
+    "notes": "Temp basal command/response pairs for conformance testing"
+  },
+  "testCases": [
+    {
+      "name": "setTempBasal_0.5U_30min",
+      "description": "Set temp basal to 0.5 U/hr for 30 minutes",
+      "input": {
+        "rate": 0.5,
+        "durationMinutes": 30
+      },
+      "expected": {
+        "opcode": "0x4C",
+        "strokes": 20,
+        "halfHours": 1,
+        "rawCommand": "A74C032F5200140100",
+        "notes": "0.5 U/hr × 40 = 20 strokes, 30 min = 1 half-hour"
+      },
+      "rfPacket": {
+        "4b6bEncoded": "2A161C32150E2C25230E311500341500",
+        "notes": "Each nibble expanded to 6 bits per 4b6b table"
+      }
+    },
+    {
+      "name": "setTempBasal_0U_30min",
+      "description": "Set temp basal to 0 U/hr for 30 minutes (zero temp)",
+      "input": {
+        "rate": 0.0,
+        "durationMinutes": 30
+      },
+      "expected": {
+        "opcode": "0x4C",
+        "strokes": 0,
+        "halfHours": 1,
+        "rawCommand": "A74C032F5200000100"
+      }
+    },
+    {
+      "name": "setTempBasal_1.5U_60min",
+      "description": "Set temp basal to 1.5 U/hr for 60 minutes",
+      "input": {
+        "rate": 1.5,
+        "durationMinutes": 60
+      },
+      "expected": {
+        "opcode": "0x4C",
+        "strokes": 60,
+        "halfHours": 2,
+        "rawCommand": "A74C032F52003C0200",
+        "notes": "1.5 U/hr × 40 = 60 strokes (0x3C), 60 min = 2 half-hours"
+      }
+    },
+    {
+      "name": "setTempBasal_2.0U_120min",
+      "description": "Set temp basal to 2.0 U/hr for 2 hours",
+      "input": {
+        "rate": 2.0,
+        "durationMinutes": 120
+      },
+      "expected": {
+        "opcode": "0x4C",
+        "strokes": 80,
+        "halfHours": 4,
+        "rawCommand": "A74C032F5200500400",
+        "notes": "2.0 U/hr × 40 = 80 strokes (0x50), 120 min = 4 half-hours"
+      }
+    },
+    {
+      "name": "cancelTempBasal",
+      "description": "Cancel active temp basal (set to 0 for 0)",
+      "input": {
+        "rate": 0.0,
+        "durationMinutes": 0
+      },
+      "expected": {
+        "opcode": "0x4C",
+        "strokes": 0,
+        "halfHours": 0,
+        "rawCommand": "A74C032F5200000000"
+      }
+    }
+  ],
+  "responseFormat": {
+    "ack": {
+      "description": "Pump acknowledges temp basal command",
+      "format": "A7 06 [serial] [opcode] 00",
+      "example": "A706032F524C00"
+    },
+    "nak": {
+      "description": "Pump rejects command (e.g., already in temp basal)",
+      "format": "A7 06 [serial] [opcode] [error_code]"
+    }
+  },
+  "validation": {
+    "rateRange": {
+      "min": 0.0,
+      "max": "depends on pump model max basal setting",
+      "step": 0.025
+    },
+    "durationRange": {
+      "min": 0,
+      "max": 1440,
+      "step": 30
+    }
+  }
+}

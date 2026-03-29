@@ -1,0 +1,251 @@
+{
+  "session_id": "SESSION-G7-001c",
+  "session_name": "Dexcom G7 J-PAKE Round 2 Vectors",
+  "description": "Test vectors for J-PAKE Round 2: computation of A = (g^x1 + g^x3 + g^x4)^(x2 * s) and zero-knowledge proof with modified base point. Round 2 uses the sum of three public keys as the ZKP generator, not the curve generator.",
+  "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+  "references": [
+    "docs/research/JPAKE-REFERENCE-ANALYSIS.md",
+    "docs/research/XDRIP-G7-JPAKE-REFERENCE.md",
+    "docs/research/DIABLE-G7-JPAKE-REFERENCE.md",
+    "externals/xDrip/libkeks/src/main/java/jamorham/keks/Calc.java"
+  ],
+  "timestamp": "2026-02-13T11:20:00Z",
+  "schema_version": "1.0.0",
+
+  "protocol_overview": {
+    "name": "J-PAKE Round 2 (RFC 8236)",
+    "curve": "P-256 (secp256r1)",
+    "purpose": "Exchange password-weighted public key contributions",
+    "prerequisite": "Round 1 complete - both parties have g^x1, g^x2, g^x3, g^x4"
+  },
+
+  "round2_format": {
+    "description": "Round 2 exchanges A and B values with zero-knowledge proofs",
+    "opcode": "0x03",
+    "opcode_name": "AuthRound2",
+    "direction": "bidirectional",
+    "initiator_message": {
+      "format": "[opcode:1] + [A:32] + [zkpA:80]",
+      "total_length": 113,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x03" },
+        "A": { "offset": 1, "length": 32, "description": "A = (g^x1 + g^x3 + g^x4)^(x2 * s) (P-256 X coordinate)" },
+        "zkpA": { "offset": 33, "length": 80, "description": "Zero-knowledge proof for x2*s with base (g^x1 + g^x3 + g^x4)" }
+      }
+    },
+    "responder_message": {
+      "format": "[opcode:1] + [B:32] + [zkpB:80]",
+      "total_length": 113,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x03" },
+        "B": { "offset": 1, "length": 32, "description": "B = (g^x3 + g^x1 + g^x2)^(x4 * s) (P-256 X coordinate)" },
+        "zkpB": { "offset": 33, "length": 80, "description": "Zero-knowledge proof for x4*s with base (g^x3 + g^x1 + g^x2)" }
+      }
+    }
+  },
+
+  "round2_computation": {
+    "description": "J-PAKE Round 2 key computation (per RFC 8236)",
+    "initiator": {
+      "base_point_computation": "GA = g^x1 + g^x3 + g^x4",
+      "exponent_computation": "x2s = x2 * s mod n",
+      "result": "A = GA^x2s = (g^x1 + g^x3 + g^x4)^(x2 * s)",
+      "zkp_base": "GA (not the curve generator G)"
+    },
+    "responder": {
+      "base_point_computation": "GB = g^x3 + g^x1 + g^x2",
+      "exponent_computation": "x4s = x4 * s mod n",
+      "result": "B = GB^x4s = (g^x3 + g^x1 + g^x2)^(x4 * s)",
+      "zkp_base": "GB (not the curve generator G)"
+    },
+    "password_scalar": {
+      "description": "s is the password converted to a scalar",
+      "4_digit": "UTF-8 bytes of 4-digit code (e.g., '1234' = [0x31, 0x32, 0x33, 0x34])",
+      "6_digit": "'00' prefix + UTF-8 bytes (e.g., '123456' = [0x30, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36])"
+    }
+  },
+
+  "round2_zkp_structure": {
+    "name": "Schnorr Zero-Knowledge Proof (Modified Base)",
+    "description": "Proves knowledge of x2*s such that A = GA^(x2*s) where GA = g^x1 + g^x3 + g^x4. CRITICAL: The base point is NOT the curve generator G.",
+    "total_length": 80,
+    "fields": {
+      "commitment": {
+        "offset": 0,
+        "length": 32,
+        "description": "V = GA^v where v is random nonce (Schnorr commitment with modified base)"
+      },
+      "challenge": {
+        "offset": 32,
+        "length": 16,
+        "description": "c = H(GA, A, V, party_id)[0:16] truncated hash"
+      },
+      "response": {
+        "offset": 48,
+        "length": 32,
+        "description": "r = v - c*(x2*s) mod n (Schnorr response)"
+      }
+    },
+    "verification": {
+      "algorithm": "GA^r * A^c == V",
+      "note": "Uses GA as base, not G; A is the public value being proven"
+    }
+  },
+
+  "test_vectors": [
+    {
+      "id": "JPAKE-R2-001",
+      "name": "Round 2 message structure validation",
+      "description": "Verify Round 2 message has correct size and opcode",
+      "assertions": [
+        { "field": "message.data[0]", "equals": "0x03", "reason": "AuthRound2 opcode" },
+        { "field": "message.data.count", "equals": 113, "reason": "opcode(1) + A(32) + zkpA(80)" },
+        { "field": "A.count", "equals": 32, "reason": "P-256 X coordinate" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-002",
+      "name": "Round 2 ZKP structure validation",
+      "description": "Verify Round 2 zero-knowledge proof has correct component sizes",
+      "assertions": [
+        { "field": "zkpA.commitment.count", "equals": 32, "reason": "EC point X coordinate" },
+        { "field": "zkpA.challenge.count", "equals": 16, "reason": "Truncated hash" },
+        { "field": "zkpA.response.count", "equals": 32, "reason": "Scalar mod n" },
+        { "field": "zkpA.data.count", "equals": 80, "reason": "Total ZKP size" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-003",
+      "name": "Round 2 response parsing",
+      "description": "Parse sensor's Round 2 response correctly",
+      "input_structure": {
+        "opcode": "0x03",
+        "B_length": 32,
+        "zkpB_length": 80
+      },
+      "assertions": [
+        { "condition": "response != nil", "when": "data.count >= 113" },
+        { "condition": "response == nil", "when": "data[0] != 0x03" },
+        { "condition": "response == nil", "when": "data.count < 113" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-004",
+      "name": "Round 2 requires Round 1 values",
+      "description": "Round 2 computation requires all four Round 1 public keys",
+      "preconditions": [
+        "gx1 (local Round 1 public key 1)",
+        "gx2 (local Round 1 public key 2)",
+        "gx3 (remote Round 1 public key 1)",
+        "gx4 (remote Round 1 public key 2)"
+      ],
+      "assertions": [
+        { "condition": "throws", "when": "gx3 is nil" },
+        { "condition": "throws", "when": "gx4 is nil" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-005",
+      "name": "Exponent scalar multiplication",
+      "description": "x2 * s mod n computation",
+      "note": "Scalar multiplication must be mod curve order n",
+      "curve_order_hex": "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+      "test_cases": [
+        {
+          "x2_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+          "s_utf8": "1234",
+          "note": "x2 * s mod n should produce 32-byte scalar"
+        }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-006",
+      "name": "Round 2 determinism with fixed keys",
+      "description": "Given same Round 1 keys and password, Round 2 A should be deterministic",
+      "assertions": [
+        { "field": "A1", "equals": "A2", "when": "same gx1, gx3, gx4, x2, and password" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-007",
+      "name": "Round 2 varies with password",
+      "description": "Different passwords produce different A values",
+      "assertions": [
+        { "field": "A_password_1234", "not_equals": "A_password_5678" }
+      ]
+    },
+    {
+      "id": "JPAKE-R2-008",
+      "name": "Round 2 state transition",
+      "description": "State machine transitions on Round 1 completion",
+      "states": {
+        "before": "awaitingRound1Response",
+        "after": "awaitingRound2Response"
+      }
+    },
+    {
+      "id": "JPAKE-R2-009",
+      "name": "Round 2 serialization roundtrip",
+      "description": "Serialize and parse Round 2 data correctly",
+      "test_data": {
+        "A_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "zkpA_hex": "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748495051525354555657585960616263646566676869707172737475767778798081"
+      }
+    },
+    {
+      "id": "JPAKE-R2-010",
+      "name": "Round 2 rejects wrong state",
+      "description": "Attempting Round 2 from wrong state throws error",
+      "assertions": [
+        { "condition": "throws unexpectedState", "when": "state == idle" },
+        { "condition": "throws unexpectedState", "when": "state == awaitingRound2Response" }
+      ]
+    }
+  ],
+
+  "xdrip_compatibility": {
+    "description": "Compatibility notes with xDrip libkeks Round 2 implementation",
+    "source": "externals/xDrip/libkeks/src/main/java/jamorham/keks/Calc.java",
+    "getRound3Packet_mapping": {
+      "note": "xDrip names this getRound3Packet, but it's J-PAKE Round 2 conceptually",
+      "computation": "val x134 = x1.add(x3).add(x4).normalize(); val A = x134.multiply(x2s).normalize();",
+      "zkp_generator": "x134 (the sum point, not G)"
+    },
+    "wire_format": {
+      "packet_size": 160,
+      "layout": "[Proof_r:32][A_X:32][A_Y:32][V_X:32][V_Y:32]",
+      "note": "Full 64-byte EC points in xDrip wire format"
+    }
+  },
+
+  "wire_format_examples": [
+    {
+      "name": "Round 2 TX (client to sensor)",
+      "opcode": "0x03",
+      "description": "Client sends A with ZK proof",
+      "format": "03 [A:32] [zkpA:80]",
+      "total_bytes": 113
+    },
+    {
+      "name": "Round 2 RX (sensor to client)",
+      "opcode": "0x03",
+      "description": "Sensor responds with B and ZK proof",
+      "format": "03 [B:32] [zkpB:80]",
+      "total_bytes": 113
+    }
+  ],
+
+  "key_insight": {
+    "title": "Modified ZKP Base Point",
+    "description": "Unlike Round 1 where ZKP proves knowledge of x such that Y = G^x (using curve generator G), Round 2 ZKP proves knowledge of x2*s such that A = GA^(x2*s) where GA is the SUM of three points from Round 1. This is critical for protocol correctness.",
+    "security_implication": "The password is embedded in the exponent (x2*s), but the ZKP never reveals either x2 or s individually."
+  },
+
+  "related_sessions": [
+    { "id": "SESSION-G7-001a", "name": "G7 BLE connection sequence", "status": "complete" },
+    { "id": "SESSION-G7-001b", "name": "G7 J-PAKE Round 1 vectors", "status": "complete" },
+    { "id": "SESSION-G7-001c", "name": "G7 J-PAKE Round 2 vectors", "status": "current" },
+    { "id": "SESSION-G7-001d", "name": "G7 key confirmation vectors", "status": "open" },
+    { "id": "SESSION-G7-001e", "name": "Full J-PAKE session fixture", "status": "open" }
+  ]
+}

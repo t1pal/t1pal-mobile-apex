@@ -1,0 +1,354 @@
+{
+  "description": "Nightscout API v3 test fixtures",
+  "trace": "NS-V3-001, NS-V3-002, NS-V3-003, NS-V3-004",
+  "created": "2026-02-14",
+  
+  "jwt_auth": {
+    "description": "JWT authentication response from /api/v2/authorization/request",
+    "request": {
+      "method": "GET",
+      "path": "/api/v2/authorization/request/token=testadmin-ad3b1f9d7b3f59d5"
+    },
+    "response": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3NUb2tlbiI6InRlc3RhZG1pbi1hZDNiMWY5ZDdiM2Y1OWQ1IiwiaWF0IjoxNzA3ODY0MDAwLCJleHAiOjE3MDc4Njc2MDB9.test-signature",
+      "iat": 1707864000,
+      "exp": 1707867600,
+      "sub": "testadmin",
+      "permissionGroups": ["api:*:read", "api:*:create", "api:*:update", "api:*:delete"]
+    }
+  },
+  
+  "version": {
+    "description": "V3 version response (public endpoint)",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/version"
+    },
+    "response": {
+      "status": 200,
+      "result": {
+        "version": "15.0.2",
+        "apiVersion": "3.0.4",
+        "srvDate": 1707864000000,
+        "storage": {
+          "storage": "mongodb",
+          "version": "6.0.4"
+        }
+      }
+    }
+  },
+  
+  "status": {
+    "description": "V3 status response with permissions",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/status",
+      "headers": {"Authorization": "Bearer {jwt}"}
+    },
+    "response": {
+      "status": 200,
+      "result": {
+        "version": "15.0.2",
+        "apiVersion": "3.0.4",
+        "srvDate": 1707864000000,
+        "storage": {
+          "storage": "mongodb",
+          "version": "6.0.4"
+        },
+        "apiPermissions": {
+          "devicestatus": "crud",
+          "entries": "crud",
+          "food": "crud",
+          "profile": "crud",
+          "settings": "crud",
+          "treatments": "crud"
+        }
+      }
+    }
+  },
+  
+  "last_modified": {
+    "description": "V3 lastModified response",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/lastModified"
+    },
+    "response": {
+      "status": 200,
+      "result": {
+        "srvDate": 1707864000000,
+        "collections": {
+          "devicestatus": 1707863900000,
+          "entries": 1707863800000,
+          "profile": 1707800000000,
+          "treatments": 1707863700000
+        }
+      }
+    }
+  },
+  
+  "entries_search": {
+    "description": "V3 entries SEARCH response",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/entries",
+      "query": "sort$desc=date&limit=3"
+    },
+    "response": {
+      "status": 200,
+      "result": [
+        {
+          "identifier": "entry-001",
+          "date": 1707864000000,
+          "dateString": "2024-02-13T20:00:00.000Z",
+          "type": "sgv",
+          "sgv": 120,
+          "direction": "Flat",
+          "device": "T1Pal",
+          "srvModified": 1707864001000,
+          "srvCreated": 1707864001000
+        },
+        {
+          "identifier": "entry-002",
+          "date": 1707863700000,
+          "dateString": "2024-02-13T19:55:00.000Z",
+          "type": "sgv",
+          "sgv": 118,
+          "direction": "FortyFiveUp",
+          "device": "T1Pal",
+          "srvModified": 1707863701000,
+          "srvCreated": 1707863701000
+        },
+        {
+          "identifier": "entry-003",
+          "date": 1707863400000,
+          "dateString": "2024-02-13T19:50:00.000Z",
+          "type": "sgv",
+          "sgv": 115,
+          "direction": "Flat",
+          "device": "T1Pal",
+          "srvModified": 1707863401000,
+          "srvCreated": 1707863401000
+        }
+      ]
+    }
+  },
+  
+  "entries_create": {
+    "description": "V3 entries CREATE response",
+    "request": {
+      "method": "POST",
+      "path": "/api/v3/entries",
+      "body": {
+        "date": 1707864300000,
+        "type": "sgv",
+        "sgv": 125,
+        "direction": "FortyFiveUp",
+        "device": "T1Pal"
+      }
+    },
+    "response": {
+      "status": 201,
+      "identifier": "entry-new-001",
+      "lastModified": 1707864301000
+    }
+  },
+  
+  "entries_create_dedup": {
+    "description": "V3 entries CREATE with deduplication",
+    "request": {
+      "method": "POST",
+      "path": "/api/v3/entries"
+    },
+    "response": {
+      "status": 200,
+      "identifier": "entry-001",
+      "lastModified": 1707864302000,
+      "isDeduplication": true,
+      "deduplicatedIdentifier": "entry-001"
+    }
+  },
+  
+  "treatments_search": {
+    "description": "V3 treatments SEARCH response",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/treatments",
+      "query": "sort$desc=date&limit=3"
+    },
+    "response": {
+      "status": 200,
+      "result": [
+        {
+          "identifier": "treatment-001",
+          "date": 1707864000000,
+          "created_at": "2024-02-13T20:00:00.000Z",
+          "eventType": "Correction Bolus",
+          "insulin": 2.5,
+          "device": "T1Pal",
+          "app": "T1Pal",
+          "srvModified": 1707864001000,
+          "srvCreated": 1707864001000
+        },
+        {
+          "identifier": "treatment-002",
+          "date": 1707860400000,
+          "created_at": "2024-02-13T19:00:00.000Z",
+          "eventType": "Meal Bolus",
+          "insulin": 5.0,
+          "carbs": 45,
+          "device": "T1Pal",
+          "app": "T1Pal",
+          "srvModified": 1707860401000,
+          "srvCreated": 1707860401000
+        },
+        {
+          "identifier": "treatment-003",
+          "date": 1707856800000,
+          "created_at": "2024-02-13T18:00:00.000Z",
+          "eventType": "Temp Basal",
+          "duration": 30,
+          "percent": 150,
+          "device": "T1Pal",
+          "app": "T1Pal",
+          "srvModified": 1707856801000,
+          "srvCreated": 1707856801000
+        }
+      ]
+    }
+  },
+  
+  "treatments_create": {
+    "description": "V3 treatments CREATE response",
+    "request": {
+      "method": "POST",
+      "path": "/api/v3/treatments",
+      "body": {
+        "date": 1707864300000,
+        "eventType": "Correction Bolus",
+        "insulin": 1.5,
+        "device": "T1Pal",
+        "app": "T1Pal"
+      }
+    },
+    "response": {
+      "status": 201,
+      "identifier": "treatment-new-001",
+      "lastModified": 1707864301000
+    }
+  },
+  
+  "devicestatus_search": {
+    "description": "V3 devicestatus SEARCH response",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/devicestatus",
+      "query": "sort$desc=date&limit=2"
+    },
+    "response": {
+      "status": 200,
+      "result": [
+        {
+          "identifier": "status-001",
+          "date": 1707864000000,
+          "created_at": "2024-02-13T20:00:00.000Z",
+          "device": "T1Pal",
+          "pump": {
+            "reservoir": 150.0,
+            "battery": {"percent": 85}
+          },
+          "loop": {
+            "enacted": {
+              "timestamp": "2024-02-13T20:00:00.000Z",
+              "rate": 0.8
+            },
+            "iob": {"iob": 2.5}
+          },
+          "srvModified": 1707864001000,
+          "srvCreated": 1707864001000
+        },
+        {
+          "identifier": "status-002",
+          "date": 1707863700000,
+          "created_at": "2024-02-13T19:55:00.000Z",
+          "device": "T1Pal",
+          "pump": {
+            "reservoir": 150.5,
+            "battery": {"percent": 85}
+          },
+          "srvModified": 1707863701000,
+          "srvCreated": 1707863701000
+        }
+      ]
+    }
+  },
+  
+  "devicestatus_create": {
+    "description": "V3 devicestatus CREATE response",
+    "request": {
+      "method": "POST",
+      "path": "/api/v3/devicestatus"
+    },
+    "response": {
+      "status": 201,
+      "identifier": "status-new-001",
+      "lastModified": 1707864301000
+    }
+  },
+  
+  "history": {
+    "description": "V3 HISTORY response for sync",
+    "request": {
+      "method": "GET",
+      "path": "/api/v3/entries/history/1707863000000"
+    },
+    "response": {
+      "status": 200,
+      "result": [
+        {
+          "identifier": "entry-001",
+          "date": 1707864000000,
+          "type": "sgv",
+          "sgv": 120,
+          "direction": "Flat",
+          "srvModified": 1707864001000,
+          "srvCreated": 1707864001000,
+          "isValid": true
+        },
+        {
+          "identifier": "entry-deleted-001",
+          "date": 1707863500000,
+          "type": "sgv",
+          "sgv": 110,
+          "srvModified": 1707863600000,
+          "srvCreated": 1707863500000,
+          "isValid": false
+        }
+      ]
+    }
+  },
+  
+  "error_401": {
+    "description": "V3 authentication error",
+    "response": {
+      "status": 401,
+      "message": "Missing or invalid authorization token"
+    }
+  },
+  
+  "error_403": {
+    "description": "V3 forbidden error",
+    "response": {
+      "status": 403,
+      "message": "Insufficient permissions"
+    }
+  },
+  
+  "error_404": {
+    "description": "V3 not found error",
+    "response": {
+      "status": 404,
+      "message": "Document not found"
+    }
+  }
+}

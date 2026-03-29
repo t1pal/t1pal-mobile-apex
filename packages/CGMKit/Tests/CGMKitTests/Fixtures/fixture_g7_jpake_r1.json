@@ -1,0 +1,258 @@
+{
+  "session_id": "SESSION-G7-001b",
+  "session_name": "Dexcom G7 J-PAKE Round 1 Vectors",
+  "description": "Test vectors for J-PAKE Round 1: public key generation (g^x1, g^x2) and zero-knowledge proofs. J-PAKE uses P-256 (secp256r1) elliptic curve.",
+  "source": "packages/CGMKit/Sources/CGMKit/DexcomG7/G7Authenticator.swift",
+  "references": [
+    "docs/research/JPAKE-REFERENCE-ANALYSIS.md",
+    "docs/research/XDRIP-G7-JPAKE-REFERENCE.md",
+    "externals/xDrip/libkeks/src/main/java/jamorham/keks/Calc.java"
+  ],
+  "timestamp": "2026-02-13T11:00:00Z",
+  "schema_version": "1.0.0",
+
+  "protocol_overview": {
+    "name": "J-PAKE (RFC 8236)",
+    "curve": "P-256 (secp256r1)",
+    "password": "4-digit sensor code",
+    "purpose": "Password-authenticated key exchange without exposing the password"
+  },
+
+  "round1_format": {
+    "description": "Round 1 exchanges public keys and zero-knowledge proofs",
+    "opcode": "0x02",
+    "opcode_name": "AuthRound1",
+    "direction": "bidirectional",
+    "initiator_message": {
+      "format": "[opcode:1] + [gx1:32] + [gx2:32] + [zkp1:80] + [zkp2:80]",
+      "total_length": 225,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x02" },
+        "gx1": { "offset": 1, "length": 32, "description": "First public key g^x1 (P-256 X coordinate)" },
+        "gx2": { "offset": 33, "length": 32, "description": "Second public key g^x2 (P-256 X coordinate)" },
+        "zkp1": { "offset": 65, "length": 80, "description": "Zero-knowledge proof for x1" },
+        "zkp2": { "offset": 145, "length": 80, "description": "Zero-knowledge proof for x2" }
+      }
+    },
+    "responder_message": {
+      "format": "[opcode:1] + [gx3:32] + [gx4:32] + [zkp3:80] + [zkp4:80]",
+      "total_length": 225,
+      "fields": {
+        "opcode": { "offset": 0, "length": 1, "value": "0x02" },
+        "gx3": { "offset": 1, "length": 32, "description": "Sensor public key g^x3" },
+        "gx4": { "offset": 33, "length": 32, "description": "Sensor public key g^x4" },
+        "zkp3": { "offset": 65, "length": 80, "description": "Zero-knowledge proof for x3" },
+        "zkp4": { "offset": 145, "length": 80, "description": "Zero-knowledge proof for x4" }
+      }
+    }
+  },
+
+  "zkp_structure": {
+    "name": "Schnorr Zero-Knowledge Proof",
+    "description": "Proves knowledge of discrete log x such that Y = g^x without revealing x",
+    "total_length": 80,
+    "fields": {
+      "commitment": {
+        "offset": 0,
+        "length": 32,
+        "description": "V = g^v where v is random nonce (Schnorr commitment)"
+      },
+      "challenge": {
+        "offset": 32,
+        "length": 16,
+        "description": "c = H(G, Y, V, party_id)[0:16] truncated hash"
+      },
+      "response": {
+        "offset": 48,
+        "length": 32,
+        "description": "r = v - c*x mod n (Schnorr response)"
+      }
+    },
+    "verification": {
+      "algorithm": "g^r * Y^c == V",
+      "hash_input": "party_id || Y || V",
+      "curve_order": "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551"
+    }
+  },
+
+  "p256_constants": {
+    "curve_name": "secp256r1 / P-256 / prime256v1",
+    "field_size": 32,
+    "uncompressed_point_size": 65,
+    "compressed_point_size": 33,
+    "packet_size": 160,
+    "curve_order_hex": "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+    "curve_order_bytes": [
+      255, 255, 255, 255, 0, 0, 0, 0,
+      255, 255, 255, 255, 255, 255, 255, 255,
+      188, 230, 250, 173, 167, 23, 158, 132,
+      243, 185, 202, 194, 252, 99, 37, 81
+    ]
+  },
+
+  "test_vectors": [
+    {
+      "id": "JPAKE-R1-001",
+      "name": "Round 1 message structure validation",
+      "description": "Verify Round 1 message has correct size and opcode",
+      "assertions": [
+        { "field": "message.data[0]", "equals": "0x02", "reason": "AuthRound1 opcode" },
+        { "field": "message.data.count", "equals": 225, "reason": "opcode(1) + gx1(32) + gx2(32) + zkp1(80) + zkp2(80)" },
+        { "field": "gx1.count", "equals": 32, "reason": "P-256 X coordinate" },
+        { "field": "gx2.count", "equals": 32, "reason": "P-256 X coordinate" }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-002",
+      "name": "ZKP structure validation",
+      "description": "Verify zero-knowledge proof has correct component sizes",
+      "assertions": [
+        { "field": "zkp.commitment.count", "equals": 32, "reason": "EC point X coordinate" },
+        { "field": "zkp.challenge.count", "equals": 16, "reason": "Truncated hash" },
+        { "field": "zkp.response.count", "equals": 32, "reason": "Scalar mod n" },
+        { "field": "zkp.data.count", "equals": 80, "reason": "Total ZKP size" }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-003",
+      "name": "Public key randomness",
+      "description": "Consecutive Round 1 messages should have different public keys",
+      "assertions": [
+        { "field": "round1a.gx1", "not_equals": "round1b.gx1", "reason": "Random x1 values" },
+        { "field": "round1a.gx2", "not_equals": "round1b.gx2", "reason": "Random x2 values" }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-004",
+      "name": "Round 1 response parsing",
+      "description": "Parse sensor's Round 1 response correctly",
+      "input_structure": {
+        "opcode": "0x02",
+        "gx3_length": 32,
+        "gx4_length": 32,
+        "zkp3_length": 80,
+        "zkp4_length": 80
+      },
+      "assertions": [
+        { "condition": "response != nil", "when": "data.count >= 225" },
+        { "condition": "response == nil", "when": "data[0] != 0x02" },
+        { "condition": "response == nil", "when": "data.count < 225" }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-005",
+      "name": "ZKP parsing from data",
+      "description": "Parse zero-knowledge proof from 80-byte data",
+      "sample_zkp_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "expected": {
+        "commitment_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "challenge_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "response_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "id": "JPAKE-R1-006",
+      "name": "Key pair generation produces valid EC points",
+      "description": "Generated public keys should be valid P-256 points",
+      "assertions": [
+        { "field": "keyPair.privateKeyBytes.count", "equals": 32 },
+        { "field": "keyPair.rawPublicKey.count", "equals": 64 },
+        { "field": "keyPair.uncompressedPublicKey.count", "equals": 65 },
+        { "field": "keyPair.uncompressedPublicKey[0]", "equals": "0x04" }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-007",
+      "name": "Password to scalar conversion",
+      "description": "4-digit sensor code to scalar conversion",
+      "test_cases": [
+        {
+          "input": "1234",
+          "expected_utf8_hex": "31323334",
+          "expected_length": 4,
+          "note": "4-digit code: raw UTF-8 bytes"
+        },
+        {
+          "input": "0000",
+          "expected_utf8_hex": "30303030",
+          "expected_length": 4
+        },
+        {
+          "input": "9999",
+          "expected_utf8_hex": "39393939",
+          "expected_length": 4
+        },
+        {
+          "input": "123456",
+          "expected_utf8_hex": "3030313233343536",
+          "expected_length": 8,
+          "note": "6-digit code: prefix '00' (0x30 0x30) per xDrip"
+        }
+      ]
+    },
+    {
+      "id": "JPAKE-R1-008",
+      "name": "Round 1 serialization roundtrip",
+      "description": "Serialize and parse Round 1 data correctly",
+      "test_data": {
+        "gx1_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "gx2_hex": "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
+        "zkp1_hex": "41424344454647484950515253545556575859606162636465666768697071727374757677787980818283848586878889909192939495969798990001020304",
+        "zkp2_hex": "0506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869"
+      }
+    }
+  ],
+
+  "xdrip_compatibility": {
+    "description": "Compatibility notes with xDrip libkeks implementation",
+    "source": "externals/xDrip/libkeks/src/main/java/jamorham/keks/",
+    "party_identifiers": {
+      "alice": "36C69656E647",
+      "bob": "375627675627",
+      "note": "Party IDs used in ZKP hash computation"
+    },
+    "packet_format": {
+      "size": 160,
+      "layout": "[Point1_X:32][Point1_Y:32][Point2_X:32][Point2_Y:32][Hash:32]",
+      "note": "xDrip uses full 64-byte EC points (X||Y), not truncated"
+    },
+    "zkp_hash_algorithm": {
+      "description": "SHA-256 with length-prefixed components",
+      "input_format": "len(G) || G || len(gv) || gv || len(gx) || gx || len(party) || party",
+      "output": "hash mod curve_order",
+      "source_line": "Calc.java:150-160"
+    }
+  },
+
+  "wire_format_examples": [
+    {
+      "name": "Round 1 TX (client to sensor)",
+      "opcode": "0x02",
+      "description": "Client sends g^x1, g^x2 with ZK proofs",
+      "format": "02 [gx1:32] [gx2:32] [zkp1:80] [zkp2:80]",
+      "total_bytes": 225
+    },
+    {
+      "name": "Round 1 RX (sensor to client)",
+      "opcode": "0x02",
+      "description": "Sensor responds with g^x3, g^x4 with ZK proofs",
+      "format": "02 [gx3:32] [gx4:32] [zkp3:80] [zkp4:80]",
+      "total_bytes": 225
+    }
+  ],
+
+  "security_properties": {
+    "forward_secrecy": true,
+    "offline_dictionary_resistance": true,
+    "password_not_revealed": true,
+    "requires_both_parties": true,
+    "zkp_purpose": "Prove knowledge of private key without revealing it"
+  },
+
+  "related_sessions": [
+    { "id": "SESSION-G7-001a", "name": "G7 BLE connection sequence", "status": "complete" },
+    { "id": "SESSION-G7-001c", "name": "G7 J-PAKE Round 2 vectors", "status": "open" },
+    { "id": "SESSION-G7-001d", "name": "G7 key confirmation vectors", "status": "open" },
+    { "id": "SESSION-G7-001e", "name": "Full J-PAKE session fixture", "status": "open" }
+  ]
+}

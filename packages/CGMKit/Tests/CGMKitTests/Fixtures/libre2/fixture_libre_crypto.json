@@ -1,0 +1,124 @@
+{
+  "_comment": "Libre Crypto Test Vectors extracted from DiaBLE",
+  "_source": "externals/DiaBLE/DiaBLE/Crypto.swift",
+  "_task": "LIBRE-SYNTH-002",
+  "_updated": "2026-02-13",
+  "_description": "AES-CCM and AES-128 ECB test vectors for Libre 3 encryption validation",
+
+  "aes_ccm_vectors": [
+    {
+      "id": "libre3_testcase1_decrypt",
+      "description": "AES-CCM TestCase1 Decrypt from CryptoSwift",
+      "source": "Libre3.testAESCCM() in Crypto.swift",
+      "operation": "decrypt",
+      "key": [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79],
+      "keyHex": "404142434445464748494a4b4c4d4e4f",
+      "keySize": 16,
+      "nonce": [16, 17, 18, 19, 20, 21, 22],
+      "nonceHex": "10111213141516",
+      "nonceSize": 7,
+      "aad": [0, 1, 2, 3, 4, 5, 6, 7],
+      "aadHex": "0001020304050607",
+      "aadSize": 8,
+      "ciphertext": [113, 98, 1, 91, 77, 172, 37, 93],
+      "ciphertextHex": "7162015b4dac255d",
+      "ciphertextSize": 8,
+      "tagLength": 4,
+      "messageLength": 4,
+      "expected": [32, 33, 34, 35],
+      "expectedHex": "20212223",
+      "expectedSize": 4,
+      "notes": "RFC 3610 test vector - standard AES-CCM validation"
+    }
+  ],
+
+  "aes_128_ecb_vectors": [
+    {
+      "id": "dexcom_g6_auth_encrypt",
+      "description": "AES-128 ECB encryption for Dexcom G6 authentication",
+      "source": "Data.aes128Encrypt() in Crypto.swift",
+      "operation": "encrypt",
+      "algorithm": "AES-128-ECB",
+      "padding": "PKCS7",
+      "references": [
+        "LoopKit/CGMBLEKit AESCrypt.m",
+        "Faifly/xDrip DexcomG6AuthChallengeTxMessage.swift"
+      ],
+      "keySize": 16,
+      "notes": "Used for Dexcom G6 BLE authentication challenge-response"
+    }
+  ],
+
+  "libre3_crypto_context": {
+    "description": "Libre 3 uses AES-CCM for BLE packet encryption",
+    "packetDescriptors": [
+      {"index": 0, "value": [0, 0, 0], "hex": "000000"},
+      {"index": 1, "value": [0, 0, 15], "hex": "00000f"},
+      {"index": 2, "value": [0, 0, 240], "hex": "0000f0"},
+      {"index": 3, "value": [0, 15, 0], "hex": "000f00"},
+      {"index": 4, "value": [0, 240, 0], "hex": "00f000"},
+      {"index": 5, "value": [15, 0, 0], "hex": "0f0000"},
+      {"index": 6, "value": [240, 0, 0], "hex": "f00000"},
+      {"index": 7, "value": [68, 0, 0], "hex": "440000"}
+    ],
+    "encryptedKAuthSize": 67,
+    "kEncSize": 16,
+    "ivEncSize": 8,
+    "authKeyExportSize": 149,
+    "notes": "Libre 3 uses ECDH key exchange followed by AES-CCM encryption"
+  },
+
+  "algorithm_parameters": {
+    "aes_ccm": {
+      "blockSize": 16,
+      "keySize": 16,
+      "nonceMinSize": 7,
+      "nonceMaxSize": 13,
+      "tagLengths": [4, 6, 8, 10, 12, 14, 16],
+      "standardReference": "RFC 3610 - Counter with CBC-MAC (CCM)"
+    },
+    "aes_128_ecb": {
+      "blockSize": 16,
+      "keySize": 16,
+      "mode": "ECB",
+      "standardReference": "NIST SP 800-38A"
+    }
+  },
+
+  "python_compat": {
+    "description": "Python implementation for cross-validation",
+    "aes_ccm_decrypt": [
+      "from Crypto.Cipher import AES",
+      "",
+      "def aes_ccm_decrypt(key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes, tag_length: int) -> bytes:",
+      "    # Note: pycryptodome's CCM expects ciphertext without tag",
+      "    # Tag is appended to ciphertext in the test vectors",
+      "    cipher = AES.new(key, AES.MODE_CCM, nonce=nonce, mac_len=tag_length)",
+      "    cipher.update(aad)",
+      "    msg_len = len(ciphertext) - tag_length",
+      "    tag = ciphertext[msg_len:]",
+      "    plaintext = cipher.decrypt_and_verify(ciphertext[:msg_len], tag)",
+      "    return plaintext"
+    ],
+    "aes_128_ecb_encrypt": [
+      "from Crypto.Cipher import AES",
+      "from Crypto.Util.Padding import pad",
+      "",
+      "def aes_128_ecb_encrypt(key: bytes, plaintext: bytes) -> bytes:",
+      "    cipher = AES.new(key, AES.MODE_ECB)",
+      "    padded = pad(plaintext, AES.block_size, style='pkcs7')",
+      "    return cipher.encrypt(padded)"
+    ],
+    "test_vector_validation": [
+      "# Validate AES-CCM test vector",
+      "key = bytes([0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f])",
+      "nonce = bytes([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16])",
+      "aad = bytes([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07])",
+      "ciphertext = bytes([0x71, 0x62, 0x01, 0x5b, 0x4d, 0xac, 0x25, 0x5d])",
+      "expected = bytes([0x20, 0x21, 0x22, 0x23])",
+      "",
+      "# decrypted = aes_ccm_decrypt(key, nonce, ciphertext, aad, tag_length=4)",
+      "# assert decrypted == expected"
+    ]
+  }
+}

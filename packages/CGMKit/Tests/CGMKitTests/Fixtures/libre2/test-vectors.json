@@ -1,0 +1,57 @@
+{
+  "_comment": "Libre 2 Decryption Test Vectors from LibreTransmitter",
+  "_source": "externals/LibreTransmitter/LibreSensor/SensorContents/PreLibre2.swift",
+  "_updated": "2026-02-08",
+  
+  "framDecryption": [
+    {
+      "name": "Example1",
+      "description": "First LibreTransmitter FRAM test vector (344 bytes)",
+      "sensorType": "libre2",
+      "sensorId": [157, 129, 194, 0, 0, 164, 7, 224],
+      "sensorIdHex": "9d81c20000a407e0",
+      "patchInfo": [157, 8, 48, 1, 115, 23],
+      "patchInfoHex": "9d08300173 17",
+      "encryptedSize": 344,
+      "encryptedFirstBytes": "069add798e9af4ba",
+      "notes": "From Libre2.Example in PreLibre2.swift"
+    },
+    {
+      "name": "Example2", 
+      "description": "Second LibreTransmitter FRAM test vector (344 bytes)",
+      "sensorType": "libre2",
+      "sensorId": [223, 32, 190, 0, 0, 164, 7, 224],
+      "sensorIdHex": "df20be0000a407e0",
+      "patchInfo": [157, 8, 48, 1, 118, 37],
+      "patchInfoHex": "9d0830017625",
+      "encryptedSize": 344,
+      "encryptedFirstBytes": "520bf344dca04321",
+      "notes": "From Libre2.Example2 in PreLibre2.swift"
+    }
+  ],
+  
+  "bleDecryption": [
+    {
+      "name": "BLEExample",
+      "description": "LibreTransmitter BLE decryption test vector (46 bytes)",
+      "sensorId": [47, 231, 177, 0, 0, 164, 7, 224],
+      "sensorIdHex": "2fe7b10000a407e0",
+      "encryptedSize": 46,
+      "encryptedData": [
+        177, 148, 250, 237, 44, 222, 161, 105,
+        70, 87, 207, 208, 216, 90, 170, 241,
+        226, 137, 28, 233, 172, 130, 22, 251,
+        103, 161, 211, 182, 63, 145, 205, 24,
+        75, 149, 49, 108, 4, 95, 225, 150,
+        196, 253, 20, 252, 104, 224
+      ],
+      "encryptedHex": "b194faed2cdea169465 7cfd0d85aaaf1e2891ce9ac8216fb67a1d3b63f91cd184b95316c045fe196c4fd14fc68e0",
+      "notes": "From Libre2.BLEExample in PreLibre2.swift"
+    }
+  ],
+  
+  "cryptoConstants": {
+    "key": [41157, 26720, 0, 5318],
+    "keyHex": ["0xA0C5", "0x6860", "0x0000", "0x14C6"]
+  }
+}

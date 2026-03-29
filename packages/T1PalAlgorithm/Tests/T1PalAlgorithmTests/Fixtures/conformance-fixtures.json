@@ -1,0 +1,154 @@
+[
+  {
+    "id": "stable-120-default",
+    "description": "Stable glucose around 120 mg/dL with default MockDataSource configuration",
+    "scenario": {
+      "mockScenario": "stable120",
+      "glucoseCount": 36,
+      "doseHistoryHours": 6,
+      "carbHistoryHours": 6
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 120,
+        "tolerance": 15
+      },
+      "iobRange": {
+        "min": 0,
+        "max": 10
+      },
+      "cobRange": {
+        "min": 0,
+        "max": 100
+      },
+      "profile": {
+        "basalRateCount": 1,
+        "isfCount": 1,
+        "carbRatioCount": 1,
+        "targetLow": 100,
+        "targetHigh": 110
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "stable-100-inrange",
+    "description": "Stable in-range glucose around 100 mg/dL",
+    "scenario": {
+      "mockScenario": "stable100"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 100,
+        "tolerance": 15
+      },
+      "profile": {
+        "basalRateCount": 1
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "hypo-scenario",
+    "description": "Hypoglycemia scenario with glucose below 70",
+    "scenario": {
+      "mockScenario": "hypo"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 55,
+        "tolerance": 15
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "hyper-scenario",
+    "description": "Hyperglycemia scenario with glucose above 180",
+    "scenario": {
+      "mockScenario": "hyper"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 250,
+        "tolerance": 50
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "rising-postmeal",
+    "description": "Rising glucose pattern (post-meal)",
+    "scenario": {
+      "mockScenario": "rising"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 160,
+        "tolerance": 40
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "falling-correction",
+    "description": "Falling glucose pattern (post-correction)",
+    "scenario": {
+      "mockScenario": "falling"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 110,
+        "tolerance": 30
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "urgent-low",
+    "description": "Urgent low scenario with rapidly dropping glucose",
+    "scenario": {
+      "mockScenario": "urgentLow"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 50,
+        "tolerance": 15
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "urgent-high",
+    "description": "Urgent high scenario with rapidly rising glucose",
+    "scenario": {
+      "mockScenario": "urgentHigh"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36,
+      "latestGlucose": {
+        "value": 300,
+        "tolerance": 50
+      }
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  },
+  {
+    "id": "variable-control",
+    "description": "Variable/poor control pattern",
+    "scenario": {
+      "mockScenario": "variable"
+    },
+    "expectedInputs": {
+      "glucoseCount": 36
+    },
+    "createdAt": "2026-02-19T05:30:00Z"
+  }
+]
