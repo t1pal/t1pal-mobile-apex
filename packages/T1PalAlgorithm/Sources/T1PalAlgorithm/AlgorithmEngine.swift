@@ -43,6 +43,24 @@ public struct AlgorithmInputs: Sendable {
     /// Multiple modifiers are composed multiplicatively with safety bounds enforced
     public let effectModifiers: [EffectModifier]?
     
+    // ALG-PARITY-005: Pre-calculated insulin activity from IOB subsystem
+    /// Insulin activity rate (U/min) at current time, from per-dose IOB calculation.
+    /// When provided, used instead of the IOB/tau approximation for prediction accuracy.
+    public let insulinActivity: Double?
+    
+    /// IOB projected assuming zero temp basal (counterfactual for safety guards)
+    public let iobWithZeroTemp: Double?
+    /// Activity rate assuming zero temp basal
+    public let iobWithZeroTempActivity: Double?
+    
+    // ALG-PARITY-006: Pre-calculated glucose deltas from CGM subsystem
+    /// BG change per 5-min interval. When provided, overrides computation from glucose array.
+    public let glucoseDelta: Double?
+    /// Short-term average delta (~15 min). From glucose_status.short_avgdelta in oref0.
+    public let shortAvgDelta: Double?
+    /// Long-term average delta (~45 min). From glucose_status.long_avgdelta in oref0.
+    public let longAvgDelta: Double?
+    
     public init(
         glucose: [GlucoseReading],
         insulinOnBoard: Double = 0,
@@ -55,7 +73,13 @@ public struct AlgorithmInputs: Sendable {
         basalSchedule: [AbsoluteScheduleValue<Double>]? = nil,
         insulinSensitivitySchedule: [AbsoluteScheduleValue<Double>]? = nil,
         correctionRangeSchedule: [AbsoluteScheduleValue<ClosedRange<Double>>]? = nil,
-        effectModifiers: [EffectModifier]? = nil
+        effectModifiers: [EffectModifier]? = nil,
+        insulinActivity: Double? = nil,
+        iobWithZeroTemp: Double? = nil,
+        iobWithZeroTempActivity: Double? = nil,
+        glucoseDelta: Double? = nil,
+        shortAvgDelta: Double? = nil,
+        longAvgDelta: Double? = nil
     ) {
         self.glucose = glucose
         self.insulinOnBoard = insulinOnBoard
@@ -69,6 +93,12 @@ public struct AlgorithmInputs: Sendable {
         self.insulinSensitivitySchedule = insulinSensitivitySchedule
         self.correctionRangeSchedule = correctionRangeSchedule
         self.effectModifiers = effectModifiers
+        self.insulinActivity = insulinActivity
+        self.iobWithZeroTemp = iobWithZeroTemp
+        self.iobWithZeroTempActivity = iobWithZeroTempActivity
+        self.glucoseDelta = glucoseDelta
+        self.shortAvgDelta = shortAvgDelta
+        self.longAvgDelta = longAvgDelta
     }
     
     // MARK: - Effect Modifier Application (ALG-EFF-003)

@@ -334,7 +334,13 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         let glucoseDelta: Double
         let shortAvgDelta: Double
         let longAvgDelta: Double
-        if inputs.glucose.count >= 2 {
+        // Use pre-computed deltas from input when available (from CGM glucose_status).
+        // Fall back to computing from glucose history when not provided.
+        if let inputDelta = inputs.glucoseDelta {
+            glucoseDelta = inputDelta
+            shortAvgDelta = inputs.shortAvgDelta ?? inputDelta
+            longAvgDelta = inputs.longAvgDelta ?? inputs.shortAvgDelta ?? inputDelta
+        } else if inputs.glucose.count >= 2 {
             glucoseDelta = inputs.glucose[0].glucose - inputs.glucose[1].glucose
             // shortAvgDelta: average of last 3 deltas (15 min)
             if inputs.glucose.count >= 4 {
@@ -355,8 +361,10 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             shortAvgDelta = 0
             longAvgDelta = 0
         }
-        // minDelta: most conservative delta estimate (oref0 uses this in guards)
-        let minDelta = min(glucoseDelta, min(shortAvgDelta, longAvgDelta))
+        // minDelta: match JS determine-basal.js:164-165
+        // JS: minDelta = min(delta, short_avgdelta); minAvgDelta = min(short_avgdelta, long_avgdelta)
+        let minDelta = min(glucoseDelta, shortAvgDelta)
+        let minAvgDelta = min(shortAvgDelta, longAvgDelta)
         
         let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
         let predResult = predictionEngine.predict(
@@ -365,13 +373,18 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             iob: inputs.insulinOnBoard,
             cob: inputs.carbsOnBoard,
             profile: profile,
-            insulinModel: insulinModel
+            insulinModel: insulinModel,
+            insulinActivity: inputs.insulinActivity,
+            iobWithZeroTemp: inputs.iobWithZeroTemp,
+            iobWithZeroTempActivity: inputs.iobWithZeroTempActivity
         )
         let predictions = predResult.toGlucosePredictions()
         
         // Derive guards and safety values from prediction curves
         let target = profile.currentTarget()
-        let sens = profile.currentISF()
+        // JS rounds sens to 1 decimal when autosens is active (determine-basal.js:340)
+        // Even with ratio=1.0, JS does: sens = round(profile.sens / sensitivityRatio, 1)
+        let sens = profile.currentISF().rounded(toPlaces: 1)
         let maxBasal = profile.maxBasal
         let maxIOB = profile.maxIOB
         let scheduledBasal = profile.currentBasal()
@@ -379,8 +392,31 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         let targetRange = profile.currentTargetRange()
         let minBG = targetRange.low
         let maxBG = targetRange.high
-        let bgi = (-inputs.insulinOnBoard / (insulinModel.dia * 60.0 / 1.85)) * sens * 5
-        let eventualBG = predResult.eventualBG
+        let tau = insulinModel.dia * 60.0 / 1.85
+        let resolvedActivity = inputs.insulinActivity ?? (inputs.insulinOnBoard / tau)
+        // bgi rounded to 2 decimals matching JS: round(-activity * sens * 5, 2)
+        let bgi = (-resolvedActivity * sens * 5).rounded(toPlaces: 2)
+        
+        // EventualBG: match JS oref0 formula (determine-basal.js:394-417)
+        // naive_eventualBG = round(bg - iob * sens)
+        // deviation = round(30/5 * (minDelta - bgi)), cascade to less conservative if negative
+        // eventualBG = naive_eventualBG + deviation
+        let rawSens = Double(inputs.profile.currentISF)  // pre-modifier ISF
+        let naiveEventualBG: Double
+        if inputs.insulinOnBoard > 0 {
+            naiveEventualBG = (bg - inputs.insulinOnBoard * sens).rounded()
+        } else {
+            naiveEventualBG = (bg - inputs.insulinOnBoard * min(sens, rawSens)).rounded()
+        }
+        // JS deviation cascade: minDelta → minAvgDelta → longAvgDelta
+        var deviation = (6.0 * (minDelta - bgi)).rounded()
+        if deviation < 0 {
+            deviation = (6.0 * (minAvgDelta - bgi)).rounded()
+            if deviation < 0 {
+                deviation = (6.0 * (longAvgDelta - bgi)).rounded()
+            }
+        }
+        let eventualBG = naiveEventualBG + deviation
         
         // Build guard system matching JS oref0 logic
         let guards = GuardSystem(
@@ -490,6 +526,13 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         }
         
         suggestedRate = roundBasal(suggestedRate, profile: BasalRoundingProfile(currentTime: inputs.currentTime))
+        
+        // Always include eventualBG in reason string (matches JS rT.eventualBG output).
+        // The adapter parses this to get the formula-based eventualBG (naive + deviation),
+        // which differs from the IOB prediction curve endpoint.
+        if !reason.contains("eventualBG") {
+            reason = "eventualBG \(Int(eventualBG)), " + reason
+        }
         
         return AlgorithmDecision(
             timestamp: inputs.currentTime,

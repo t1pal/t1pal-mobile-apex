@@ -122,23 +122,34 @@ public struct PredictionEngine: Sendable {
         cob: Double,
         profile: AlgorithmProfile,
         insulinModel: InsulinModel,
-        carbModel: CarbModel = CarbModel()
+        carbModel: CarbModel = CarbModel(),
+        insulinActivity: Double? = nil,
+        iobWithZeroTemp: Double? = nil,
+        iobWithZeroTempActivity: Double? = nil
     ) -> PredictionResult {
         let sens = profile.currentISF()
         _ = profile.currentTarget()  // target available for future use
         let scheduledBasal = profile.currentBasal()
         
+        // Resolve activity: use provided value or fall back to IOB/tau approximation
+        let tau = insulinModel.dia * 60.0 / 1.85
+        let resolvedActivity = insulinActivity ?? (iob / tau)
+        let resolvedZTActivity = iobWithZeroTempActivity ?? insulinActivity ?? (iob / tau)
+        let resolvedZTIob = iobWithZeroTemp ?? iob
+        
         // Calculate curves
         let ztCurve = predictZT(
             currentGlucose: currentGlucose,
-            glucoseDelta: glucoseDelta,
-            scheduledBasal: scheduledBasal,
-            sens: sens
+            iobWithZeroTemp: resolvedZTIob,
+            activity: resolvedZTActivity,
+            sens: sens,
+            insulinModel: insulinModel
         )
         
         let iobCurve = predictIOB(
             currentGlucose: currentGlucose,
             iob: iob,
+            activity: resolvedActivity,
             sens: sens,
             insulinModel: insulinModel,
             glucoseDelta: glucoseDelta
@@ -147,6 +158,7 @@ public struct PredictionEngine: Sendable {
         let cobCurve = predictCOB(
             currentGlucose: currentGlucose,
             iob: iob,
+            activity: resolvedActivity,
             cob: cob,
             sens: sens,
             icr: profile.currentICR(),
@@ -158,6 +170,7 @@ public struct PredictionEngine: Sendable {
             currentGlucose: currentGlucose,
             glucoseDelta: glucoseDelta,
             iob: iob,
+            activity: resolvedActivity,
             sens: sens,
             insulinModel: insulinModel
         )
@@ -173,35 +186,40 @@ public struct PredictionEngine: Sendable {
     
     // MARK: - Zero Temp Prediction
     
-    /// Predict what happens if we deliver zero insulin
+    /// Predict BG if a zero temp basal were set now.
+    ///
+    /// Matches JS oref0 prediction loop (determine-basal.js:583-585):
+    ///   predZTBGI = -iobTick.iobWithZeroTemp.activity * sens * 5
+    ///   ZTpredBG = prev + predZTBGI
+    ///
+    /// Uses iobWithZeroTemp activity (counterfactual: what if temp were cancelled)
+    /// decayed with the same exponential model.
     private func predictZT(
         currentGlucose: Double,
-        glucoseDelta: Double,
-        scheduledBasal: Double,
-        sens: Double
+        iobWithZeroTemp: Double,
+        activity: Double,
+        sens: Double,
+        insulinModel: InsulinModel
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         var glucose = currentGlucose
-        
-        // Without basal, BG will rise based on current trend
-        // plus the effect of missing basal insulin
         let intervals = predictionMinutes / intervalMinutes
+        let tau = insulinModel.dia * 60.0 / 1.85
         
         for i in 0...intervals {
             let minutes = i * intervalMinutes
             
-            // Missing basal insulin effect (accumulates over time)
-            let hoursElapsed = Double(minutes) / 60.0
-            let missingInsulin = scheduledBasal * hoursElapsed
-            let bgRiseFromMissingBasal = missingInsulin * sens
+            if i == 0 {
+                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                continue
+            }
             
-            // Current trend continues (decaying)
-            let trendDecay = exp(-Double(minutes) / 60.0)  // Decay over 1 hour
-            let trendEffect = glucoseDelta * Double(minutes / 5) * trendDecay
+            let t = Double(minutes)
+            let decay = exp(-t / tau)
+            let activityTick = activity * decay
+            let predZTBGI = -activityTick * sens * Double(intervalMinutes)
             
-            glucose = currentGlucose + bgRiseFromMissingBasal + trendEffect
-            glucose = max(39, min(400, glucose))  // Clamp to valid range
-            
+            glucose = max(39, min(400, glucose + predZTBGI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
         }
         
@@ -219,20 +237,18 @@ public struct PredictionEngine: Sendable {
     private func predictIOB(
         currentGlucose: Double,
         iob: Double,
+        activity: Double,
         sens: Double,
         insulinModel: InsulinModel,
         glucoseDelta: Double = 0
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         let intervals = predictionMinutes / intervalMinutes
-        
-        // Activity at t=0 approximated from IOB and tau
         let tau = insulinModel.dia * 60.0 / 1.85
-        let activity0 = iob / tau  // rough: dIOB/dt ≈ IOB/tau at t=0
         
         // Carb impact deviation (ci): deviation from expected based on delta
         // In oref0: ci = round(minDelta - bgi, 1) where bgi = -activity * sens * 5
-        let bgi0 = -activity0 * sens * Double(intervalMinutes)
+        let bgi0 = -activity * sens * Double(intervalMinutes)
         let ci = glucoseDelta - bgi0
         
         var prevGlucose = currentGlucose
@@ -248,7 +264,7 @@ public struct PredictionEngine: Sendable {
             }
             
             // Activity-based BG impact for this tick
-            let activityTick = activity0 * decay
+            let activityTick = activity * decay
             let predBGI = -activityTick * sens * Double(intervalMinutes)
             
             // Deviation impact decays linearly from ci to 0 over 60 minutes
@@ -268,6 +284,7 @@ public struct PredictionEngine: Sendable {
     private func predictCOB(
         currentGlucose: Double,
         iob: Double,
+        activity: Double,
         cob: Double,
         sens: Double,
         icr: Double,
@@ -276,26 +293,35 @@ public struct PredictionEngine: Sendable {
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         let intervals = predictionMinutes / intervalMinutes
+        let tau = insulinModel.dia * 60.0 / 1.85
         
         // Assume 3-hour absorption for COB prediction
         let absorptionTime = 3.0
+        var prevGlucose = currentGlucose
         
         for i in 0...intervals {
             let minutes = i * intervalMinutes
             let hours = Double(minutes) / 60.0
             
-            // IOB effect (lowers BG)
-            let remainingIOB = iob * insulinModel.iobRemaining(at: hours)
-            let absorbedIOB = iob - remainingIOB
-            let iobEffect = absorbedIOB * sens
+            if i == 0 {
+                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                continue
+            }
+            
+            // IOB effect via activity decay (matching JS predBGI pattern)
+            let t = Double(minutes)
+            let decay = exp(-t / tau)
+            let activityTick = activity * decay
+            let predBGI = -activityTick * sens * Double(intervalMinutes)
             
             // COB effect (raises BG)
             let absorbedCarbs = cob * carbModel.absorbed(at: hours, absorptionTime: absorptionTime)
-            let carbEffect = absorbedCarbs / icr * sens  // Convert carbs to insulin equivalent
+            let prevAbsorbed = cob * carbModel.absorbed(at: Double((i - 1) * intervalMinutes) / 60.0, absorptionTime: absorptionTime)
+            let carbImpact = (absorbedCarbs - prevAbsorbed) / icr * sens
             
-            let glucose = max(39, min(400, currentGlucose - iobEffect + carbEffect))
-            
+            let glucose = max(39, min(400, prevGlucose + predBGI + carbImpact))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
+            prevGlucose = glucose
         }
         
         return PredictionCurve(type: .cob, points: points)
@@ -308,32 +334,38 @@ public struct PredictionEngine: Sendable {
         currentGlucose: Double,
         glucoseDelta: Double,
         iob: Double,
+        activity: Double,
         sens: Double,
         insulinModel: InsulinModel
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         let intervals = predictionMinutes / intervalMinutes
+        let tau = insulinModel.dia * 60.0 / 1.85
         
         // UAM assumes the current rise will continue but decay
-        // Used when BG is rising faster than IOB can explain
+        var prevGlucose = currentGlucose
         
         for i in 0...intervals {
             let minutes = i * intervalMinutes
-            let hours = Double(minutes) / 60.0
             
-            // IOB effect
-            let remainingIOB = iob * insulinModel.iobRemaining(at: hours)
-            let absorbedIOB = iob - remainingIOB
-            let iobEffect = absorbedIOB * sens
+            if i == 0 {
+                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                continue
+            }
             
-            // UAM effect: current delta continues with exponential decay
-            // Assumes unannounced carbs are being absorbed
-            let uamDecay = exp(-hours / 1.5)  // 1.5 hour half-life
-            let uamEffect = glucoseDelta * Double(minutes / 5) * uamDecay
+            // IOB effect via activity decay (matching JS predBGI)
+            let t = Double(minutes)
+            let decay = exp(-t / tau)
+            let activityTick = activity * decay
+            let predBGI = -activityTick * sens * Double(intervalMinutes)
             
-            let glucose = max(39, min(400, currentGlucose - iobEffect + uamEffect))
+            // UAM effect: current deviation continues with exponential decay
+            let uamDecay = exp(-Double(minutes) / 90.0)  // ~1.5 hour time constant
+            let predUCI = glucoseDelta * uamDecay
             
+            let glucose = max(39, min(400, prevGlucose + predBGI + predUCI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
+            prevGlucose = glucose
         }
         
         return PredictionCurve(type: .uam, points: points)
@@ -520,7 +552,7 @@ public struct GuardSystem: Sendable {
     }
 }
 
-private extension Double {
+extension Double {
     func rounded(toPlaces places: Int) -> Double {
         let multiplier = pow(10.0, Double(places))
         return (self * multiplier).rounded() / multiplier
