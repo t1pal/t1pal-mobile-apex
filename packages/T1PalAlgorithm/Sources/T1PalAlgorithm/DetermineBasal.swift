@@ -324,13 +324,39 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             profile = applyOverride(override, to: profile)
         }
         
+        // Apply effect modifiers (autosens ratio, activity agents, etc.)
+        if let modifiers = inputs.effectModifiers, !modifiers.isEmpty {
+            let composed = EffectModifier.compose(modifiers)
+            profile = applyEffectModifier(composed, to: profile)
+        }
+        
         // Generate prediction curves using PredictionEngine
         let glucoseDelta: Double
+        let shortAvgDelta: Double
+        let longAvgDelta: Double
         if inputs.glucose.count >= 2 {
             glucoseDelta = inputs.glucose[0].glucose - inputs.glucose[1].glucose
+            // shortAvgDelta: average of last 3 deltas (15 min)
+            if inputs.glucose.count >= 4 {
+                let deltas = (0..<3).map { inputs.glucose[$0].glucose - inputs.glucose[$0 + 1].glucose }
+                shortAvgDelta = deltas.reduce(0, +) / Double(deltas.count)
+            } else {
+                shortAvgDelta = glucoseDelta
+            }
+            // longAvgDelta: average of last 9 deltas (45 min)
+            if inputs.glucose.count >= 10 {
+                let deltas = (0..<9).map { inputs.glucose[$0].glucose - inputs.glucose[$0 + 1].glucose }
+                longAvgDelta = deltas.reduce(0, +) / Double(deltas.count)
+            } else {
+                longAvgDelta = shortAvgDelta
+            }
         } else {
             glucoseDelta = 0
+            shortAvgDelta = 0
+            longAvgDelta = 0
         }
+        // minDelta: most conservative delta estimate (oref0 uses this in guards)
+        let minDelta = min(glucoseDelta, min(shortAvgDelta, longAvgDelta))
         
         let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
         let predResult = predictionEngine.predict(
@@ -371,7 +397,16 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         } else if eventualBG > target + 10 {
             let insulinRequired = (eventualBG - target) / sens
             let extraInsulin = insulinRequired - inputs.insulinOnBoard
-            let extraRate = extraInsulin * 2
+            // Use minDelta to temper aggression: if delta is falling (minDelta < 0)
+            // while eventualBG is high, reduce the extra rate proportionally
+            let deltaFactor: Double
+            if minDelta < -2 && glucoseDelta > 0 {
+                // Delta disagreement: short trend up but longer trend down — be conservative
+                deltaFactor = 0.5
+            } else {
+                deltaFactor = 1.0
+            }
+            let extraRate = extraInsulin * 2 * deltaFactor
             suggestedRate = scheduledBasal + extraRate
             suggestedRate = min(suggestedRate, maxBasal)
             suggestedRate = max(suggestedRate, 0)
@@ -462,6 +497,28 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
                 continuance: continuance
             )
         }
+    }
+    
+    /// Apply composed effect modifier (autosens, activity agents, etc.) to profile.
+    /// Multiplies ISF, ICR, and basal schedules by the modifier's multipliers.
+    private func applyEffectModifier(_ modifier: EffectModifier, to profile: AlgorithmProfile) -> AlgorithmProfile {
+        let adjustedBasal = Schedule(entries: profile.basalSchedule.entries.map { entry in
+            BasalScheduleEntry(startTime: entry.startTime, rate: entry.rate * modifier.basalMultiplier)
+        })
+        let adjustedISF = Schedule(entries: profile.isfSchedule.entries.map { entry in
+            ISFScheduleEntry(startTime: entry.startTime, sensitivity: entry.sensitivity * modifier.isfMultiplier)
+        })
+        let adjustedICR = Schedule(entries: profile.icrSchedule.entries.map { entry in
+            ICRScheduleEntry(startTime: entry.startTime, ratio: entry.ratio * modifier.crMultiplier)
+        })
+        return AlgorithmProfile(
+            basalSchedule: adjustedBasal,
+            isfSchedule: adjustedISF,
+            icrSchedule: adjustedICR,
+            targetSchedule: profile.targetSchedule,
+            maxBasal: profile.maxBasal,
+            maxIOB: profile.maxIOB
+        )
     }
     
     /// Apply profile override to adjust ISF, CR, and basal rates
