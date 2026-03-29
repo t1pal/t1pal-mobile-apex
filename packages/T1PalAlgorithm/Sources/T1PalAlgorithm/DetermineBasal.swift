@@ -324,18 +324,78 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             profile = applyOverride(override, to: profile)
         }
         
-        // Run determine-basal (pure algorithm — what rate do we WANT?)
-        let output = determineBasal.calculate(
-            glucose: inputs.glucose,
+        // Generate prediction curves using PredictionEngine
+        let glucoseDelta: Double
+        if inputs.glucose.count >= 2 {
+            glucoseDelta = inputs.glucose[0].glucose - inputs.glucose[1].glucose
+        } else {
+            glucoseDelta = 0
+        }
+        
+        let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
+        let predResult = predictionEngine.predict(
+            currentGlucose: inputs.glucose.first?.glucose ?? 0,
+            glucoseDelta: glucoseDelta,
             iob: inputs.insulinOnBoard,
             cob: inputs.carbsOnBoard,
-            profile: profile
+            profile: profile,
+            insulinModel: insulinModel
         )
+        let predictions = predResult.toGlucosePredictions()
+        
+        // Use prediction-derived eventualBG and minPredBG for the decision
+        let eventualBG = predResult.eventualBG
+        let minPredBG = predResult.minPredBG
+        
+        // Re-derive rate using prediction-based eventualBG (fixes scalar IOB bias)
+        let target = profile.currentTarget()
+        let sens = profile.currentISF()
+        let maxBasal = profile.maxBasal
+        let maxIOB = profile.maxIOB
+        let scheduledBasal = profile.currentBasal()
+        let bg = inputs.glucose.first?.glucose ?? 0
+        
+        var suggestedRate: Double
+        var reason: String
+        
+        // Safety: low glucose suspend
+        if bg < 70 {
+            suggestedRate = 0
+            reason = "BG \(Int(bg)) < 70, suspending"
+        } else if minPredBG < 70 {
+            suggestedRate = 0
+            reason = "minPredBG \(Int(minPredBG)) < 70, suspending"
+        } else if inputs.insulinOnBoard >= maxIOB {
+            suggestedRate = scheduledBasal
+            reason = "IOB \(String(format: "%.2f", inputs.insulinOnBoard)) >= maxIOB \(String(format: "%.2f", maxIOB))"
+        } else if eventualBG > target + 10 {
+            let insulinRequired = (eventualBG - target) / sens
+            let extraInsulin = insulinRequired - inputs.insulinOnBoard
+            let extraRate = extraInsulin * 2
+            suggestedRate = scheduledBasal + extraRate
+            suggestedRate = min(suggestedRate, maxBasal)
+            suggestedRate = max(suggestedRate, 0)
+            reason = "eventualBG \(Int(eventualBG)) > \(Int(target)), "
+            reason += "insulinReq \(String(format: "%.2f", insulinRequired)), "
+            reason += "rate \(String(format: "%.2f", suggestedRate))"
+        } else if eventualBG < target - 10 {
+            let reductionFactor = (target - eventualBG) / sens
+            suggestedRate = scheduledBasal - reductionFactor
+            suggestedRate = max(suggestedRate, 0)
+            reason = "eventualBG \(Int(eventualBG)) < \(Int(target)), "
+            reason += "reducing to \(String(format: "%.2f", suggestedRate))"
+        } else {
+            suggestedRate = scheduledBasal
+            reason = "eventualBG \(Int(eventualBG)) near target \(Int(target)), no change"
+        }
+        
+        suggestedRate = roundBasal(suggestedRate, profile: BasalRoundingProfile(currentTime: inputs.currentTime))
         
         return AlgorithmDecision(
             timestamp: inputs.currentTime,
-            suggestedTempBasal: output.rate.map { TempBasal(rate: $0, duration: Double(output.duration ?? 30) * 60) },
-            reason: output.reason
+            suggestedTempBasal: TempBasal(rate: suggestedRate, duration: 30 * 60),
+            reason: reason,
+            predictions: predictions
         )
     }
     
