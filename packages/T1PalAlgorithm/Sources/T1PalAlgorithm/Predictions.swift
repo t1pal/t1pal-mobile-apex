@@ -372,3 +372,157 @@ extension PredictionResult {
         )
     }
 }
+
+// MARK: - Guard System
+
+/// Safety guard values extracted from prediction curves.
+///
+/// Matches the guard logic in oref0 determine-basal.js (lines 550-760).
+/// Guards track minimum predicted BG per-curve with different wait times
+/// before setting minimums, then blend based on COB/UAM state.
+public struct GuardSystem: Sendable {
+
+    // Per-curve guards (no wait — used for safety floor)
+    public let minIOBGuardBG: Double
+    public let minCOBGuardBG: Double
+    public let minUAMGuardBG: Double
+    public let minZTGuardBG: Double
+
+    // Per-curve prediction minimums (with insulin peak wait)
+    public let minIOBPredBG: Double
+    public let minCOBPredBG: Double
+    public let minUAMPredBG: Double
+
+    // Blended guard (the final safety value used in dosing decisions)
+    public let minGuardBG: Double
+
+    // Blended minPredBG (used for rate calculation)
+    public let minPredBG: Double
+
+    // Threshold and expectedDelta
+    public let threshold: Double
+    public let expectedDelta: Double
+
+    /// Extract guard values from prediction curves matching JS oref0 logic.
+    public init(
+        predictions: PredictionResult,
+        bg: Double,
+        minBG: Double,
+        maxBG: Double,
+        targetBG: Double,
+        eventualBG: Double,
+        bgi: Double,
+        hasCOB: Bool = false,
+        enableUAM: Bool = false,
+        hasCarbs: Bool = false,
+        fractionCarbsLeft: Double = 0,
+        insulinPeakMinutes: Int = 90,
+        intervalMinutes: Int = 5
+    ) {
+        // threshold: min_bg of 90 → 65, 100 → 70, 110 → 75, 130 → 85
+        // Origin: determine-basal.js:329
+        self.threshold = minBG - 0.5 * (minBG - 40)
+
+        // expectedDelta: expected BG change per 5m based on BGI + target correction
+        // Origin: determine-basal.js:31-35
+        let fiveMinBlocks = Double((2 * 60) / intervalMinutes)  // 24
+        let targetDelta = targetBG - eventualBG
+        self.expectedDelta = (bgi + (targetDelta / fiveMinBlocks)).rounded(toPlaces: 1)
+
+        let peakTicks = insulinPeakMinutes / intervalMinutes  // 18 ticks at 90m
+
+        // Extract per-curve minimums
+        // Guards: no wait (track from tick 0) — used for safety floor
+        // PredBGs: wait for insulin peak — used for rate decisions
+        var iobGuard = 999.0, cobGuard = 999.0, uamGuard = 999.0, ztGuard = 999.0
+        var iobPred = 999.0, cobPred = 999.0, uamPred = 999.0
+
+        for (i, point) in predictions.iob.points.enumerated() {
+            if point.glucose < iobGuard { iobGuard = point.glucose.rounded() }
+            if i > peakTicks && point.glucose < iobPred { iobPred = point.glucose.rounded() }
+        }
+        for (i, point) in predictions.cob.points.enumerated() {
+            if point.glucose < cobGuard { cobGuard = point.glucose.rounded() }
+            if hasCOB && i > peakTicks && point.glucose < cobPred { cobPred = point.glucose.rounded() }
+        }
+        for (i, point) in predictions.uam.points.enumerated() {
+            if point.glucose < uamGuard { uamGuard = point.glucose.rounded() }
+            // UAM uses 12 ticks (60m) instead of peakTicks (90m)
+            if enableUAM && i > 12 && point.glucose < uamPred { uamPred = point.glucose.rounded() }
+        }
+        for point in predictions.zt.points {
+            if point.glucose < ztGuard { ztGuard = point.glucose.rounded() }
+        }
+
+        self.minIOBGuardBG = iobGuard
+        self.minCOBGuardBG = cobGuard
+        self.minUAMGuardBG = uamGuard
+        self.minZTGuardBG = ztGuard
+        self.minIOBPredBG = iobPred
+        self.minCOBPredBG = cobPred
+        self.minUAMPredBG = uamPred
+
+        // Blend minGuardBG based on COB/UAM state
+        // Origin: determine-basal.js:729-740
+        var guard_: Double
+        if hasCOB {
+            if enableUAM {
+                guard_ = fractionCarbsLeft * cobGuard + (1 - fractionCarbsLeft) * uamGuard
+            } else {
+                guard_ = cobGuard
+            }
+        } else if enableUAM {
+            guard_ = uamGuard
+        } else {
+            guard_ = iobGuard
+        }
+        self.minGuardBG = guard_.rounded()
+
+        // minZTUAMPredBG blending
+        // Origin: determine-basal.js:744-758
+        let threshold_ = self.threshold
+        var minZTUAMPredBG: Double
+        if ztGuard < threshold_ {
+            minZTUAMPredBG = (uamPred + ztGuard) / 2
+        } else if ztGuard < targetBG {
+            let blendPct = (ztGuard - threshold_) / max(1, targetBG - threshold_)
+            let blendedMinZTGuardBG = uamPred * blendPct + ztGuard * (1 - blendPct)
+            minZTUAMPredBG = (uamPred + blendedMinZTGuardBG) / 2
+        } else if ztGuard > uamPred {
+            minZTUAMPredBG = (uamPred + ztGuard) / 2
+        } else {
+            minZTUAMPredBG = uamPred
+        }
+        minZTUAMPredBG = minZTUAMPredBG.rounded()
+
+        // Blend minPredBG based on carb/UAM state
+        // Origin: determine-basal.js:762-790
+        var pred: Double
+        if hasCarbs {
+            if !enableUAM && cobPred < 999 {
+                pred = max(iobPred, cobPred).rounded()
+            } else if cobPred < 999 {
+                let blendedMinPredBG = fractionCarbsLeft * cobPred + (1 - fractionCarbsLeft) * minZTUAMPredBG
+                pred = max(iobPred, cobPred, blendedMinPredBG).rounded()
+            } else if enableUAM {
+                pred = minZTUAMPredBG
+            } else {
+                pred = guard_
+            }
+        } else if enableUAM {
+            pred = max(iobPred, minZTUAMPredBG).rounded()
+        } else {
+            pred = iobPred
+        }
+        // avgPredBG cap (use ZT guard as proxy)
+        pred = min(pred, ztGuard)
+        self.minPredBG = pred
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let multiplier = pow(10.0, Double(places))
+        return (self * multiplier).rounded() / multiplier
+    }
+}

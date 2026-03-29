@@ -369,66 +369,131 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         )
         let predictions = predResult.toGlucosePredictions()
         
-        // Use prediction-derived eventualBG and minPredBG for the decision
-        let eventualBG = predResult.eventualBG
-        let minPredBG = predResult.minPredBG
-        
-        // Re-derive rate using prediction-based eventualBG (fixes scalar IOB bias)
+        // Derive guards and safety values from prediction curves
         let target = profile.currentTarget()
         let sens = profile.currentISF()
         let maxBasal = profile.maxBasal
         let maxIOB = profile.maxIOB
         let scheduledBasal = profile.currentBasal()
         let bg = inputs.glucose.first?.glucose ?? 0
+        let targetRange = profile.currentTargetRange()
+        let minBG = targetRange.low
+        let maxBG = targetRange.high
+        let bgi = (-inputs.insulinOnBoard / (insulinModel.dia * 60.0 / 1.85)) * sens * 5
+        let eventualBG = predResult.eventualBG
+        
+        // Build guard system matching JS oref0 logic
+        let guards = GuardSystem(
+            predictions: predResult,
+            bg: bg,
+            minBG: minBG,
+            maxBG: maxBG,
+            targetBG: target,
+            eventualBG: eventualBG,
+            bgi: bgi,
+            hasCOB: inputs.carbsOnBoard > 0,
+            enableUAM: false,  // oref0 doesn't have UAM (that's oref1)
+            hasCarbs: inputs.carbsOnBoard > 0,
+            fractionCarbsLeft: 1.0
+        )
+        
+        let threshold = guards.threshold
+        let expectedDelta = guards.expectedDelta
+        let minPredBG = guards.minPredBG
+        let minGuardBG = guards.minGuardBG
         
         var suggestedRate: Double
         var reason: String
+        var duration: Int = 30  // default 30m duration
         
-        // Safety: low glucose suspend
-        if bg < 70 {
-            suggestedRate = 0
-            reason = "BG \(Int(bg)) < 70, suspending"
-        } else if minPredBG < 70 {
-            suggestedRate = 0
-            reason = "minPredBG \(Int(minPredBG)) < 70, suspending"
-        } else if inputs.insulinOnBoard >= maxIOB {
+        // ---- Core dosing logic matching JS determine-basal.js:908-1060 ----
+        
+        // LGS exception: don't suspend if IOB is very negative and BG rising faster than expected
+        // Origin: determine-basal.js:908-910
+        if bg < threshold
+            && inputs.insulinOnBoard < -scheduledBasal * 20.0 / 60.0
+            && minDelta > 0
+            && minDelta > expectedDelta {
             suggestedRate = scheduledBasal
-            reason = "IOB \(String(format: "%.2f", inputs.insulinOnBoard)) >= maxIOB \(String(format: "%.2f", maxIOB))"
-        } else if eventualBG > target + 10 {
-            let insulinRequired = (eventualBG - target) / sens
-            let extraInsulin = insulinRequired - inputs.insulinOnBoard
-            // Use minDelta to temper aggression: if delta is falling (minDelta < 0)
-            // while eventualBG is high, reduce the extra rate proportionally
-            let deltaFactor: Double
-            if minDelta < -2 && glucoseDelta > 0 {
-                // Delta disagreement: short trend up but longer trend down — be conservative
-                deltaFactor = 0.5
+            reason = "IOB \(String(format: "%.2f", inputs.insulinOnBoard)) < "
+            reason += "\(String(format: "%.2f", -scheduledBasal * 20.0 / 60.0))"
+            reason += " and minDelta \(String(format: "%.1f", minDelta)) > expectedDelta \(String(format: "%.1f", expectedDelta))"
+        }
+        // Predictive low glucose suspend
+        // Origin: determine-basal.js:912-920
+        else if bg < threshold || minGuardBG < threshold {
+            let bgUndershoot = target - minGuardBG
+            let worstCaseInsulinReq = bgUndershoot / sens
+            var durationReq = Int((60.0 * worstCaseInsulinReq / scheduledBasal).rounded())
+            durationReq = (durationReq / 30) * 30  // round to 30m
+            durationReq = min(120, max(30, durationReq))
+            
+            suggestedRate = 0
+            duration = durationReq
+            reason = "minGuardBG \(Int(minGuardBG)) < threshold \(Int(threshold)), suspending \(durationReq)m"
+        }
+        // EventualBG below min_bg
+        // Origin: determine-basal.js:931+
+        else if eventualBG < minBG {
+            // If rising faster than expected, just set basal
+            if minDelta > expectedDelta && minDelta > 0 {
+                suggestedRate = scheduledBasal
+                reason = "eventualBG \(Int(eventualBG)) < \(Int(minBG))"
+                reason += " but minDelta \(String(format: "%.1f", minDelta)) > expectedDelta \(String(format: "%.1f", expectedDelta))"
+                reason += "; setting basal"
             } else {
-                deltaFactor = 1.0
+                // Calculate low temp to bring BG up
+                var insulinReq = 2 * min(0, (eventualBG - target) / sens)
+                // If barely falling, reduce insulinReq proportionally
+                if minDelta < 0 && minDelta > expectedDelta && expectedDelta < 0 {
+                    insulinReq = insulinReq * (minDelta / expectedDelta)
+                }
+                suggestedRate = scheduledBasal + (2 * insulinReq)
+                suggestedRate = max(suggestedRate, 0)
+                reason = "eventualBG \(Int(eventualBG)) < \(Int(minBG)), insulinReq \(String(format: "%.2f", insulinReq))"
             }
-            let extraRate = extraInsulin * 2 * deltaFactor
-            suggestedRate = scheduledBasal + extraRate
+        }
+        // Falling faster than expected
+        // Origin: determine-basal.js:1006-1023
+        else if minDelta < expectedDelta {
+            suggestedRate = scheduledBasal
+            reason = "eventualBG \(Int(eventualBG)) > \(Int(minBG))"
+            reason += " but minDelta \(String(format: "%.1f", minDelta)) < expectedDelta \(String(format: "%.1f", expectedDelta))"
+            reason += "; setting basal"
+        }
+        // In range (eventualBG or minPredBG below max_bg)
+        // Origin: determine-basal.js:1025-1037
+        else if min(eventualBG, minPredBG) < maxBG {
+            suggestedRate = scheduledBasal
+            reason = "\(Int(eventualBG))-\(Int(minPredBG)) in range: no temp required"
+        }
+        // IOB > maxIOB
+        // Origin: determine-basal.js:1045-1053
+        else if inputs.insulinOnBoard > maxIOB {
+            suggestedRate = scheduledBasal
+            reason = "IOB \(String(format: "%.2f", inputs.insulinOnBoard)) > maxIOB \(String(format: "%.2f", maxIOB)); setting basal"
+        }
+        // Above target: calculate high temp
+        // Origin: determine-basal.js:1055-1070
+        else {
+            var insulinReq = (min(minPredBG, eventualBG) - target) / sens
+            // Cap at maxIOB
+            if insulinReq > maxIOB - inputs.insulinOnBoard {
+                insulinReq = maxIOB - inputs.insulinOnBoard
+            }
+            suggestedRate = scheduledBasal + (2 * insulinReq)
             suggestedRate = min(suggestedRate, maxBasal)
             suggestedRate = max(suggestedRate, 0)
-            reason = "eventualBG \(Int(eventualBG)) > \(Int(target)), "
-            reason += "insulinReq \(String(format: "%.2f", insulinRequired)), "
-            reason += "rate \(String(format: "%.2f", suggestedRate))"
-        } else if eventualBG < target - 10 {
-            let reductionFactor = (target - eventualBG) / sens
-            suggestedRate = scheduledBasal - reductionFactor
-            suggestedRate = max(suggestedRate, 0)
-            reason = "eventualBG \(Int(eventualBG)) < \(Int(target)), "
-            reason += "reducing to \(String(format: "%.2f", suggestedRate))"
-        } else {
-            suggestedRate = scheduledBasal
-            reason = "eventualBG \(Int(eventualBG)) near target \(Int(target)), no change"
+            reason = "eventualBG \(Int(eventualBG)) >= \(Int(maxBG))"
+            reason += ", insulinReq \(String(format: "%.2f", insulinReq))"
+            reason += ", rate \(String(format: "%.2f", suggestedRate))"
         }
         
         suggestedRate = roundBasal(suggestedRate, profile: BasalRoundingProfile(currentTime: inputs.currentTime))
         
         return AlgorithmDecision(
             timestamp: inputs.currentTime,
-            suggestedTempBasal: TempBasal(rate: suggestedRate, duration: 30 * 60),
+            suggestedTempBasal: TempBasal(rate: suggestedRate, duration: Double(duration) * 60),
             reason: reason,
             predictions: predictions
         )
