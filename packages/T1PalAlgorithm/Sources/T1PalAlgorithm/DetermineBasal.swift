@@ -280,7 +280,7 @@ public struct DetermineBasal: Sendable {
 /// Stateless and immutable - inherently Sendable
 public struct Oref0Algorithm: AlgorithmEngine, Sendable {
     public let name = "oref0"
-    public let version = "0.1.0"
+    public let version = "0.2.0"
     
     public let capabilities = AlgorithmCapabilities(
         supportsTempBasal: true,
@@ -298,16 +298,23 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
     private let insulinModel: InsulinModel
     private let iobCalculator: IOBCalculator
     private let cobCalculator: COBCalculator
+
+    /// Continuance policy applied after algorithm calculation.
+    /// Determines whether to actually command the pump or keep the current temp.
+    /// Use `PassthroughContinuancePolicy()` to disable continuance filtering.
+    public let continuancePolicy: any ContinuancePolicy
     
-    public init(insulinType: InsulinType = .humalog) {
+    public init(
+        insulinType: InsulinType = .humalog,
+        continuancePolicy: (any ContinuancePolicy)? = nil
+    ) {
         self.insulinModel = InsulinModel(insulinType: insulinType)
         self.iobCalculator = IOBCalculator(model: insulinModel)
         self.cobCalculator = COBCalculator()
+        self.continuancePolicy = continuancePolicy ?? Oref0ContinuancePolicy()
     }
     
     public func calculate(_ inputs: AlgorithmInputs) throws -> AlgorithmDecision {
-        // Convert inputs to AlgorithmProfile if needed
-        // For now, create a minimal profile from TherapyProfile
         var profile = createAlgorithmProfile(from: inputs.profile)
         
         // Apply active override if present and not expired (ALG-PARITY-004)
@@ -317,7 +324,7 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             profile = applyOverride(override, to: profile)
         }
         
-        // Run determine-basal
+        // Run determine-basal (pure algorithm — what rate do we WANT?)
         let output = determineBasal.calculate(
             glucose: inputs.glucose,
             iob: inputs.insulinOnBoard,
@@ -330,6 +337,71 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             suggestedTempBasal: output.rate.map { TempBasal(rate: $0, duration: Double(output.duration ?? 30) * 60) },
             reason: output.reason
         )
+    }
+    
+    /// Calculate with continuance filtering applied.
+    ///
+    /// Returns the raw algorithm decision plus the continuance evaluation.
+    /// When continuance returns `.continue`, `suggestedTempBasal` will be nil
+    /// in the returned decision (meaning "no pump command needed").
+    public func calculateWithContinuance(
+        _ inputs: AlgorithmInputs,
+        currentTemp: CurrentTempState = .none
+    ) throws -> (decision: AlgorithmDecision, continuance: ContinuanceDecision) {
+        let rawDecision = try calculate(inputs)
+        
+        let profile = createAlgorithmProfile(from: inputs.profile)
+        let scheduledBasal = profile.currentBasal(at: inputs.currentTime)
+        
+        let suggested = SuggestedBasal(
+            rate: rawDecision.suggestedTempBasal?.rate,
+            duration: rawDecision.suggestedTempBasal.map { Int($0.duration / 60) } ?? 30,
+            scheduledBasal: scheduledBasal
+        )
+        
+        let roundingProfile = BasalRoundingProfile(
+            skipNeutralTemps: false,
+            currentTime: inputs.currentTime
+        )
+        
+        let continuance = continuancePolicy.evaluate(
+            suggested: suggested,
+            current: currentTemp,
+            profile: roundingProfile
+        )
+        
+        switch continuance {
+        case .continue(let reason):
+            return (
+                decision: AlgorithmDecision(
+                    timestamp: inputs.currentTime,
+                    suggestedTempBasal: nil,
+                    reason: rawDecision.reason + ", " + reason,
+                    predictions: rawDecision.predictions
+                ),
+                continuance: continuance
+            )
+        case .cancel(let reason):
+            return (
+                decision: AlgorithmDecision(
+                    timestamp: inputs.currentTime,
+                    suggestedTempBasal: TempBasal(rate: 0, duration: 0),
+                    reason: rawDecision.reason + ". " + reason,
+                    predictions: rawDecision.predictions
+                ),
+                continuance: continuance
+            )
+        case .change(let rate, let duration, _):
+            return (
+                decision: AlgorithmDecision(
+                    timestamp: inputs.currentTime,
+                    suggestedTempBasal: TempBasal(rate: rate, duration: Double(duration) * 60),
+                    reason: rawDecision.reason,
+                    predictions: rawDecision.predictions
+                ),
+                continuance: continuance
+            )
+        }
     }
     
     /// Apply profile override to adjust ISF, CR, and basal rates

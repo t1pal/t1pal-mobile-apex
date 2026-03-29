@@ -602,7 +602,7 @@ struct Oref0AlgorithmTests {
     @Test func algorithmcreation() {
         let algorithm = Oref0Algorithm()
         #expect(algorithm.name == "oref0")
-        #expect(algorithm.version == "0.1.0")
+        #expect(algorithm.version == "0.2.0")
     }
     
     @Test func algorithmcalculate() throws {
