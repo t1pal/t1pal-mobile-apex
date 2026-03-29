@@ -140,7 +140,8 @@ public struct PredictionEngine: Sendable {
             currentGlucose: currentGlucose,
             iob: iob,
             sens: sens,
-            insulinModel: insulinModel
+            insulinModel: insulinModel,
+            glucoseDelta: glucoseDelta
         )
         
         let cobCurve = predictCOB(
@@ -209,29 +210,53 @@ public struct PredictionEngine: Sendable {
     
     // MARK: - IOB Prediction
     
-    /// Predict based on insulin on board
+    /// Predict based on insulin on board using tick-by-tick accumulation.
+    ///
+    /// Matches JS oref0 prediction loop (determine-basal.js:574-581):
+    ///   predBGI = -iobTick.activity * sens * 5
+    ///   predDev = ci * (1 - min(1, tick/12))   // deviation decays over 60 min
+    ///   IOBpredBG = prev + predBGI + predDev
     private func predictIOB(
         currentGlucose: Double,
         iob: Double,
         sens: Double,
-        insulinModel: InsulinModel
+        insulinModel: InsulinModel,
+        glucoseDelta: Double = 0
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         let intervals = predictionMinutes / intervalMinutes
         
+        // Activity at t=0 approximated from IOB and tau
+        let tau = insulinModel.dia * 60.0 / 1.85
+        let activity0 = iob / tau  // rough: dIOB/dt ≈ IOB/tau at t=0
+        
+        // Carb impact deviation (ci): deviation from expected based on delta
+        // In oref0: ci = round(minDelta - bgi, 1) where bgi = -activity * sens * 5
+        let bgi0 = -activity0 * sens * Double(intervalMinutes)
+        let ci = glucoseDelta - bgi0
+        
+        var prevGlucose = currentGlucose
+        
         for i in 0...intervals {
             let minutes = i * intervalMinutes
-            let hours = Double(minutes) / 60.0
+            let t = Double(minutes)
+            let decay = exp(-t / tau)
             
-            // Calculate remaining IOB at this time
-            let remainingIOB = iob * insulinModel.iobRemaining(at: hours)
-            let absorbedIOB = iob - remainingIOB
+            if i == 0 {
+                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                continue
+            }
             
-            // Effect of absorbed insulin
-            let bgDrop = absorbedIOB * sens
-            let glucose = max(39, min(400, currentGlucose - bgDrop))
+            // Activity-based BG impact for this tick
+            let activityTick = activity0 * decay
+            let predBGI = -activityTick * sens * Double(intervalMinutes)
             
+            // Deviation impact decays linearly from ci to 0 over 60 minutes
+            let predDev = ci * (1.0 - min(1.0, Double(i) / 12.0))
+            
+            let glucose = max(39, min(400, prevGlucose + predBGI + predDev))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
+            prevGlucose = glucose
         }
         
         return PredictionCurve(type: .iob, points: points)
@@ -319,20 +344,18 @@ public struct PredictionEngine: Sendable {
 
 extension InsulinModel {
     /// Calculate remaining IOB fraction at time t (hours)
+    ///
+    /// Uses the same exponential decay model as the JS oref0 adapter:
+    /// `tau = DIA_hours * 60 / 1.85` (in minutes), decay = `exp(-t_min / tau)`
+    /// This provides cross-validation parity with the JS adapter's
+    /// `generateIobArray()` function.
     public func iobRemaining(at t: Double) -> Double {
-        // Use the integral of activity curve
-        // For simplicity, use exponential decay based on DIA
         guard t >= 0 else { return 1.0 }
         guard t < dia else { return 0 }
         
-        // Exponential decay with time constant based on peak
-        let tau = insulinType.peakTime / 1.5
-        let decay = exp(-t / tau)
-        
-        // Blend with linear decay near end of DIA
-        let linearDecay = max(0, 1 - t / dia)
-        
-        return (decay + linearDecay) / 2
+        let tMinutes = t * 60.0
+        let tau = dia * 60.0 / 1.85
+        return exp(-tMinutes / tau)
     }
 }
 
