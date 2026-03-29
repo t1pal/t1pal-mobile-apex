@@ -19,7 +19,13 @@ import T1PalCore
 ///
 /// Source: UC Davis GlucOS research project
 /// Trace: ADR-010
-public final class GlucOSAlgorithm: AlgorithmEngine, @unchecked Sendable {
+/// GlucOS-inspired algorithm with dynamic ISF, predictive alerts, and adaptive tuning
+///
+/// Converted to struct — previous `_lastPredictions` mutable state was write-only (never read
+/// back), so it was dead state. Predicted points are now returned in diagnostics output.
+///
+/// Inherently Sendable as a value type with no mutable state.
+public struct GlucOSAlgorithm: AlgorithmEngine, Sendable {
     public let name = "GlucOS"
     public let version = "1.0.0"
     public let capabilities = AlgorithmCapabilities.glucos
@@ -34,10 +40,6 @@ public final class GlucOSAlgorithm: AlgorithmEngine, @unchecked Sendable {
     
     // Configuration
     private let configuration: GlucOSConfiguration
-    
-    // Thread safety
-    private let stateLock = NSLock()
-    private var _lastPredictions: [PredictedGlucose] = []
     
     public init(configuration: GlucOSConfiguration = .default) {
         self.configuration = configuration
@@ -76,7 +78,7 @@ public final class GlucOSAlgorithm: AlgorithmEngine, @unchecked Sendable {
         )
         
         // Build predictions for chart
-        let predictions = buildPredictions(
+        let predictionResult = buildPredictions(
             from: inputs.glucose,
             prediction: prediction,
             currentTime: inputs.currentTime
@@ -125,7 +127,10 @@ public final class GlucOSAlgorithm: AlgorithmEngine, @unchecked Sendable {
             suggestedTempBasal: tempBasal,
             suggestedBolus: nil,  // GlucOS uses temp basals, not boluses
             reason: reason,
-            predictions: predictions
+            predictions: predictionResult.predictions,
+            diagnostics: AlgorithmDiagnostics(glucos: GlucOSDiagnostics(
+                predictedPoints: predictionResult.diagnosticPoints
+            ))
         )
     }
     
@@ -208,28 +213,29 @@ public final class GlucOSAlgorithm: AlgorithmEngine, @unchecked Sendable {
         from readings: [GlucoseReading],
         prediction: GlucosePrediction?,
         currentTime: Date
-    ) -> GlucosePredictions? {
+    ) -> (predictions: GlucosePredictions?, diagnosticPoints: [PredictedGlucose]) {
         guard let latest = readings.last,
               let pred = prediction else {
-            return nil
+            return (nil, [])
         }
         
         // Build simple prediction curve using IOB array
         // (GlucOS uses simpler model - just one prediction line)
         let points = [latest.glucose, pred.value]
         
-        stateLock.lock()
-        _lastPredictions = [
+        let diagPoints = [
             PredictedGlucose(date: currentTime, glucose: latest.glucose),
             PredictedGlucose(date: currentTime.addingTimeInterval(pred.horizon), glucose: pred.value)
         ]
-        stateLock.unlock()
         
-        return GlucosePredictions(
-            iob: points,
-            cob: [],
-            uam: [],
-            zt: []
+        return (
+            GlucosePredictions(
+                iob: points,
+                cob: [],
+                uam: [],
+                zt: []
+            ),
+            diagPoints
         )
     }
     

@@ -112,18 +112,25 @@ public struct AlgorithmDecision: Sendable {
     public let reason: String
     public let predictions: GlucosePredictions?
     
+    /// Diagnostic data from this calculation cycle (ALG-DIAG-030).
+    /// Replaces mutable `_last*` state previously stored on algorithm classes.
+    /// Nil for algorithms that don't emit diagnostics or when diagnostics are disabled.
+    public let diagnostics: AlgorithmDiagnostics?
+    
     public init(
         timestamp: Date = Date(),
         suggestedTempBasal: TempBasal? = nil,
         suggestedBolus: Double? = nil,
         reason: String = "",
-        predictions: GlucosePredictions? = nil
+        predictions: GlucosePredictions? = nil,
+        diagnostics: AlgorithmDiagnostics? = nil
     ) {
         self.timestamp = timestamp
         self.suggestedTempBasal = suggestedTempBasal
         self.suggestedBolus = suggestedBolus
         self.reason = reason
         self.predictions = predictions
+        self.diagnostics = diagnostics
     }
 }
 

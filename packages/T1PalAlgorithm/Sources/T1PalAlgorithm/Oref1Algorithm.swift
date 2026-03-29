@@ -21,7 +21,12 @@ import T1PalCore
 /// - Super Micro Bolus (SMB) for faster corrections
 /// - Dynamic ISF for BG-responsive sensitivity
 /// - UAM (Unannounced Meals) detection
-/// Thread-safe: Uses lock-protected mutable state for autosens
+///
+/// Remains a class (not struct) because:
+/// - `smbHistory`: Safety-critical accumulator that limits SMB frequency across cycles.
+/// - `_lastAutosensResult`: Fallback state used when insufficient glucose data for fresh autosens.
+/// Diagnostic values (autosens result, SMB snapshot) are now also returned in
+/// AlgorithmDecision.diagnostics.oref1 for immutable access.
 public final class Oref1Algorithm: AlgorithmEngine, @unchecked Sendable {
     public let name = "oref1"
     public let version = "0.1.0"
@@ -53,10 +58,13 @@ public final class Oref1Algorithm: AlgorithmEngine, @unchecked Sendable {
     public let enableDynamicISF: Bool
     public let enableUAM: Bool
     
-    // Thread-safe mutable state
+    // Stateful: SMB safety accumulator (limits delivery frequency across cycles)
     private let smbHistory = SMBHistory()
+    // Stateful: autosens fallback when insufficient data for fresh calculation
     private let stateLock = NSLock()
     private var _lastAutosensResult: AutosensResult = .neutral
+    // Cached diagnostics for backward-compatible public accessors
+    private var _lastDiagnostics: Oref1Diagnostics?
     
     /// Thread-safe access to last autosens result
     private var lastAutosensResult: AutosensResult {
@@ -190,6 +198,19 @@ public final class Oref1Algorithm: AlgorithmEngine, @unchecked Sendable {
             reason += " | UAM detected"
         }
         
+        // ALG-DIAG-030: Build diagnostics snapshot for immutable output
+        let oref1Diag = Oref1Diagnostics(
+            autosensResult: autosensResult,
+            recentSMBs: smbHistory.recentDeliveries,
+            smbUnitsLastHour: smbHistory.totalUnitsSince(inputs.currentTime.addingTimeInterval(-3600)),
+            uamDetected: uamDetected
+        )
+        
+        // Cache for backward-compatible public accessors
+        stateLock.lock()
+        _lastDiagnostics = oref1Diag
+        stateLock.unlock()
+        
         return AlgorithmDecision(
             timestamp: inputs.currentTime,
             suggestedTempBasal: output.rate.map { 
@@ -197,7 +218,8 @@ public final class Oref1Algorithm: AlgorithmEngine, @unchecked Sendable {
             },
             suggestedBolus: suggestedBolus,
             reason: reason,
-            predictions: buildPredictions(output: output, profile: profile)
+            predictions: buildPredictions(output: output, profile: profile),
+            diagnostics: AlgorithmDiagnostics(oref1: oref1Diag)
         )
     }
     
@@ -302,16 +324,21 @@ public final class Oref1Algorithm: AlgorithmEngine, @unchecked Sendable {
     // MARK: - Public Accessors
     
     /// Get recent SMB deliveries
+    /// Prefer reading from AlgorithmDecision.diagnostics?.oref1?.recentSMBs instead.
     public var recentSMBs: [SMBDelivery] {
         smbHistory.recentDeliveries
     }
     
     /// Get current autosens result
+    /// Prefer reading from AlgorithmDecision.diagnostics?.oref1?.autosensResult instead.
     public var currentAutosens: AutosensResult {
-        lastAutosensResult
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _lastDiagnostics?.autosensResult ?? lastAutosensResult
     }
     
     /// Total SMB units in last hour
+    /// Prefer reading from AlgorithmDecision.diagnostics?.oref1?.smbUnitsLastHour instead.
     public var smbUnitsLastHour: Double {
         smbHistory.totalUnitsSince(Date().addingTimeInterval(-3600))
     }

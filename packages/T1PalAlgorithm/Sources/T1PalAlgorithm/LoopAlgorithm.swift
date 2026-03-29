@@ -226,7 +226,14 @@ public struct RCDiagnostics: Sendable {
 
 /// Loop-compatible algorithm engine
 /// Integrates all Loop math components into a single cohesive algorithm
-/// Thread-safe: Uses lock-protected mutable state for retrospective correction
+///
+/// Remains a class (not struct) because cycle-to-cycle state is required:
+/// - `_lastPredictions`: Retrospective correction compares prior predictions to actuals
+/// - `_correctionHistory`: Tracks RC results for the legacy RC path
+/// These are NOT pure diagnostics — they affect algorithm output on subsequent calls.
+///
+/// All pure diagnostic state (ICE, insulin effects, IOB breakdown, RC diagnostics)
+/// is now returned in AlgorithmDecision.diagnostics instead of cached here.
 public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
     /// Name includes variant for disambiguation
     public var name: String {
@@ -263,18 +270,14 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
     private let retrospectiveCorrection: RetrospectiveCorrection
     private let doseCalculator: LoopDoseCalculator
     
-    // Thread-safe mutable state for retrospective correction
+    // Cycle-to-cycle state required for algorithm correctness (NOT diagnostics).
+    // _lastPredictions: retrospective correction needs prior cycle's predictions.
+    // _correctionHistory: legacy RC path accumulates corrections over time.
+    // _lastDiagnostics: cached for backward-compatible public accessors.
     private let stateLock = NSLock()
     private var _lastPredictions: [PredictedGlucose] = []
     private var _correctionHistory: [RetrospectiveCorrectionResult] = []
-    private var _lastInsulinCounteractionEffects: [GlucoseEffectVelocity] = []  // ALG-DIAG-ICE-001
-    private var _lastRCDiagnostics: RCDiagnostics?  // ALG-RC-008
-    private var _lastInsulinEffects: [GlucoseEffectValue] = []  // ALG-RC-004: Input to ICE calculation
-    private var _lastIOB: Double = 0  // ALG-RC-007: Computed IOB
-    private var _lastInputIOB: Double = 0  // ALG-RC-007: Input IOB from fixture
-    private var _lastDoseCount: Int = 0  // ALG-RC-007: Number of doses in calculation
-    private var _lastIOBUsedBasalSchedule: Bool = false  // ALG-RC-007: Which path was used
-    private var _lastIOBCalculationTime: Date?  // ALG-RC-007: Time used for IOB calculation
+    private var _lastDiagnostics: LoopDiagnostics?
     
     /// Thread-safe access to last predictions
     private var lastPredictions: [PredictedGlucose] {
@@ -287,20 +290,6 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
             stateLock.lock()
             defer { stateLock.unlock() }
             _lastPredictions = newValue
-        }
-    }
-    
-    /// Thread-safe access to last insulin counteraction effects (ALG-DIAG-ICE-001)
-    private var lastInsulinCounteractionEffects: [GlucoseEffectVelocity] {
-        get {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            return _lastInsulinCounteractionEffects
-        }
-        set {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            _lastInsulinCounteractionEffects = newValue
         }
     }
     
@@ -437,14 +426,8 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
             )
         }
         
-        // ALG-RC-007: Store IOB values for debugging
-        stateLock.lock()
-        _lastIOB = iob
-        _lastInputIOB = inputs.insulinOnBoard
-        _lastDoseCount = doseEntries.count
-        _lastIOBUsedBasalSchedule = inputs.basalSchedule != nil && !(inputs.basalSchedule?.isEmpty ?? true)
-        _lastIOBCalculationTime = now
-        stateLock.unlock()
+        // ALG-RC-007: Track IOB diagnostic values locally (output via AlgorithmDiagnostics)
+        let diagIOBUsedBasalSchedule = inputs.basalSchedule != nil && !(inputs.basalSchedule?.isEmpty ?? true)
         
         // ALG-DIAG-GEFF-005: Use CGM reading time for prediction alignment
         let predictionStartDate = latestGlucose.timestamp
@@ -454,6 +437,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
         // Positive ICE = something countering insulin (carbs, stress, etc.)
         // This is used for dynamic carb absorption and retrospective correction
         var insulinCounteractionEffects: [GlucoseEffectVelocity] = []
+        var diagInsulinEffects: [GlucoseEffectValue] = []  // ALG-RC-004: for diagnostics output
         if let basalSchedule = inputs.basalSchedule, !basalSchedule.isEmpty {
             // Compute insulin effects timeline for ICE calculation
             // ALG-100-RECONCILE: Reconcile overlapping doses before annotation
@@ -466,19 +450,14 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
                 delta: 5 * 60  // 5-minute intervals
             )
             
-            // ALG-RC-004: Store insulin effects for debugging
-            stateLock.lock()
-            _lastInsulinEffects = insulinEffects
-            stateLock.unlock()
+            // ALG-RC-004: Track insulin effects for diagnostics output
+            diagInsulinEffects = insulinEffects
             
             // Convert GlucoseEffectValue to GlucoseEffect for counteractionEffects
             let effectsForICE = insulinEffects.map { GlucoseEffect(date: $0.startDate, quantity: $0.value) }
             
             // Compute counteraction: actual glucose change - expected insulin effect change
             insulinCounteractionEffects = inputs.glucose.counteractionEffects(to: effectsForICE)
-            
-            // Store for future use (dynamic carbs, RC)
-            lastInsulinCounteractionEffects = insulinCounteractionEffects
         }
         
         // Calculate COB from carb history
@@ -511,6 +490,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
         // RC = discrepancies from ICE - expected carb effects
         var rcEffects: [GlucoseEffect]? = nil
         var correctionApplied = false
+        var diagRCDiagnostics: RCDiagnostics? = nil  // ALG-RC-008: for diagnostics output
         
         if configuration.enableRetrospectiveCorrection && !insulinCounteractionEffects.isEmpty {
             // T6-005: Check if glucose data is smooth enough for RC
@@ -547,7 +527,6 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
                 // AID-IRC-001: Check for runtime override via UserDefaults
                 let useIntegralRC = Self.checkIntegralRCOverride() ?? configuration.useIntegralRetrospectiveCorrection
                 let loopRCEffects: [LoopGlucoseEffect]
-                var rcDiag: RCDiagnostics?  // ALG-RC-008
                 
                 if useIntegralRC {
                     var rc = IntegralRetrospectiveCorrection()
@@ -558,7 +537,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
                         retrospectiveCorrectionGroupingInterval: RetrospectiveCorrectionConstants.groupingInterval
                     )
                     // Build diagnostics for Integral RC
-                    rcDiag = RCDiagnostics(
+                    diagRCDiagnostics = RCDiagnostics(
                         rcType: "Integral",
                         discrepancyCount: discrepancies.count,
                         discrepancies: discrepancies,
@@ -578,7 +557,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
                         retrospectiveCorrectionGroupingInterval: RetrospectiveCorrectionConstants.groupingInterval
                     )
                     // Build diagnostics for Standard RC (ALG-RC-008)
-                    rcDiag = RCDiagnostics(
+                    diagRCDiagnostics = RCDiagnostics(
                         rcType: "Standard",
                         discrepancyCount: rc.discrepancyCount,
                         discrepancies: discrepancies,
@@ -591,10 +570,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
                     )
                 }
                 
-                // Store diagnostics (thread-safe)
-                stateLock.lock()
-                _lastRCDiagnostics = rcDiag
-                stateLock.unlock()
+                // RC diagnostics tracked in diagRCDiagnostics for output
                 
                 // Convert to GlucoseEffect for prediction engine
                 // ALG-100-RC: RC effects from decayEffect are CUMULATIVE (starting at current glucose)
@@ -755,12 +731,31 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
         // Build predictions for output
         let glucosePredictions = buildGlucosePredictions(from: predictions, minGlucose: minGlucose)
         
+        // ALG-DIAG-030: Build diagnostics from local values (replaces mutable _last* state)
+        let loopDiagnostics = LoopDiagnostics(
+            rcDiagnostics: diagRCDiagnostics,
+            insulinCounteractionEffects: insulinCounteractionEffects,
+            insulinEffects: diagInsulinEffects,
+            computedIOB: iob,
+            inputIOB: inputs.insulinOnBoard,
+            doseCount: doseEntries.count,
+            iobUsedBasalSchedule: diagIOBUsedBasalSchedule,
+            iobCalculationTime: now,
+            recentCorrections: Array(correctionHistory.suffix(10).reversed())
+        )
+        
+        // Cache diagnostics for backward-compatible public accessors
+        stateLock.lock()
+        _lastDiagnostics = loopDiagnostics
+        stateLock.unlock()
+        
         return AlgorithmDecision(
             timestamp: now,
             suggestedTempBasal: tempBasal,
             suggestedBolus: suggestedBolus,
             reason: updatedReason,
-            predictions: glucosePredictions
+            predictions: glucosePredictions,
+            diagnostics: AlgorithmDiagnostics(loop: loopDiagnostics)
         )
     }
     
@@ -913,64 +908,75 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
     }
     
     /// Get retrospective correction history
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.recentCorrections instead.
     public var recentCorrections: [RetrospectiveCorrectionResult] {
-        correctionHistory.suffix(10).reversed()
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _lastDiagnostics?.recentCorrections ?? []
     }
     
     /// Get last RC diagnostics for debugging (ALG-RC-008)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.rcDiagnostics instead.
     public var lastRCDiagnostics: RCDiagnostics? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastRCDiagnostics
+        return _lastDiagnostics?.rcDiagnostics
     }
     
     /// Get last insulin counteraction effects for debugging (ALG-RC-001)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.insulinCounteractionEffects instead.
     public var debugLastInsulinCounteractionEffects: [GlucoseEffectVelocity] {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastInsulinCounteractionEffects
+        return _lastDiagnostics?.insulinCounteractionEffects ?? []
     }
     
     /// Get last insulin effects for debugging (ALG-RC-004)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.insulinEffects instead.
     public var debugLastInsulinEffects: [GlucoseEffectValue] {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastInsulinEffects
+        return _lastDiagnostics?.insulinEffects ?? []
     }
     
     /// Get last computed IOB for debugging (ALG-RC-007)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.computedIOB instead.
     public var debugLastIOB: Double {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastIOB
+        return _lastDiagnostics?.computedIOB ?? 0
     }
     
     /// Get last input IOB for debugging (ALG-RC-007)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.inputIOB instead.
     public var debugLastInputIOB: Double {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastInputIOB
+        return _lastDiagnostics?.inputIOB ?? 0
     }
     
     /// Get last dose count for debugging (ALG-RC-007)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.doseCount instead.
     public var debugLastDoseCount: Int {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastDoseCount
+        return _lastDiagnostics?.doseCount ?? 0
     }
     
     /// Get whether last IOB used basal schedule (ALG-RC-007)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.iobUsedBasalSchedule instead.
     public var debugLastIOBUsedBasalSchedule: Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastIOBUsedBasalSchedule
+        return _lastDiagnostics?.iobUsedBasalSchedule ?? false
     }
     
     /// Get last IOB calculation time (ALG-RC-007)
+    /// Prefer reading from AlgorithmDecision.diagnostics?.loop?.iobCalculationTime instead.
     public var debugLastIOBCalculationTime: Date? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return _lastIOBCalculationTime
+        return _lastDiagnostics?.iobCalculationTime
     }
     
     // MARK: - Runtime IRC Override (AID-IRC-001)
@@ -1005,7 +1011,7 @@ public final class LoopAlgorithm: AlgorithmEngine, @unchecked Sendable {
         lastPredictions = []
         correctionHistory = []
         stateLock.lock()
-        _lastRCDiagnostics = nil
+        _lastDiagnostics = nil
         stateLock.unlock()
     }
 }
