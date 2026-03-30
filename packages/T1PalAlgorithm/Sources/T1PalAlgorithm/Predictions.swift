@@ -645,6 +645,27 @@ public struct GuardSystem: Sendable {
         }
         minZTUAMPredBG = minZTUAMPredBG.rounded()
 
+        // Compute avgPredBG from eventual (last) values of each curve
+        // Origin: determine-basal.js:711-726
+        let iobEventual = predictions.iob.eventualValue
+        let cobEventual = predictions.cob.eventualValue
+        let uamEventual = predictions.uam.eventualValue
+
+        var avgPredBG: Double
+        if minUAMPredBG < 999 && minCOBPredBG < 999 {
+            avgPredBG = ((1 - fractionCarbsLeft) * uamEventual + fractionCarbsLeft * cobEventual).rounded()
+        } else if minCOBPredBG < 999 {
+            avgPredBG = ((iobEventual + cobEventual) / 2).rounded()
+        } else if minUAMPredBG < 999 {
+            avgPredBG = ((iobEventual + uamEventual) / 2).rounded()
+        } else {
+            avgPredBG = iobEventual.rounded()
+        }
+        // Floor avgPredBG at minZTGuardBG
+        if ztGuard > avgPredBG {
+            avgPredBG = ztGuard
+        }
+
         // Blend minPredBG based on carb/UAM state
         // Origin: determine-basal.js:762-790
         var pred: Double
@@ -664,8 +685,9 @@ public struct GuardSystem: Sendable {
         } else {
             pred = iobPred
         }
-        // avgPredBG cap (use ZT guard as proxy)
-        pred = min(pred, ztGuard)
+        // Cap minPredBG at avgPredBG (not ztGuard)
+        // Origin: determine-basal.js:786
+        pred = min(pred, avgPredBG)
         self.minPredBG = pred
     }
 }
