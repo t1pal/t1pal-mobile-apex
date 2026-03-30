@@ -478,7 +478,21 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
                 deviation = (6.0 * (longAvgDelta - bgi)).rounded()
             }
         }
-        let eventualBG = naiveEventualBG + deviation
+        let eventualBGFormula = naiveEventualBG + deviation
+        
+        // JS determine-basal.js:670-699: After computing prediction curves,
+        // eventualBG is lifted to max(eventualBG, lastCOBpredBG, lastUAMpredBG).
+        // This accounts for future carb absorption raising BG beyond the formula estimate.
+        var eventualBG = eventualBGFormula
+        if mealCOB > 0 && hasCOB {
+            let lastCOBpredBG = predResult.cob.eventualValue.rounded()
+            eventualBG = max(eventualBG, lastCOBpredBG)
+        }
+        // UAM update (oref1 only — oref0 has enableUAM=false)
+        // if enableUAM && (ci > 0 || remainingCIpeak > 0) {
+        //     let lastUAMpredBG = predResult.uam.eventualValue.rounded()
+        //     eventualBG = max(eventualBG, lastUAMpredBG)
+        // }
         
         // Build guard system matching JS oref0 logic
         let guards = GuardSystem(

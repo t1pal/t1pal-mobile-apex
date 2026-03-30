@@ -267,7 +267,7 @@ public struct PredictionEngine: Sendable {
             let activityTick = activity * decay
             let predZTBGI = -activityTick * sens * Double(intervalMinutes)
             
-            glucose = max(39, min(400, glucose + predZTBGI))
+            glucose = max(39, min(401, glucose + predZTBGI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
         }
         
@@ -317,7 +317,7 @@ public struct PredictionEngine: Sendable {
             // Deviation impact decays linearly from ci to 0 over 60 minutes
             let predDev = resolvedCI * (1.0 - min(1.0, Double(i) / 12.0))
             
-            let glucose = max(39, min(400, prevGlucose + predBGI + predDev))
+            let glucose = max(39, min(401, prevGlucose + predBGI + predDev))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
             prevGlucose = glucose
         }
@@ -366,7 +366,7 @@ public struct PredictionEngine: Sendable {
             let prevAbsorbed = cob * carbModel.absorbed(at: Double((i - 1) * intervalMinutes) / 60.0, absorptionTime: absorptionTime)
             let carbImpact = (absorbedCarbs - prevAbsorbed) / icr * sens
             
-            let glucose = max(39, min(400, prevGlucose + predBGI + carbImpact))
+            let glucose = max(39, min(401, prevGlucose + predBGI + carbImpact))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
             prevGlucose = glucose
         }
@@ -436,7 +436,7 @@ public struct PredictionEngine: Sendable {
             // COBpredBG: prev + predBGI + min(0, predDev) + predCI + remainingCI
             // Key: only NEGATIVE deviations included (positive deviations are carb absorption,
             // already accounted for by predCI/remainingCI)
-            let glucose = max(39.0, min(400.0,
+            let glucose = max(39.0, min(401.0,
                 prevGlucose + predBGI + min(0.0, predDev) + predCI + remainingCI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
             prevGlucose = glucose
@@ -481,7 +481,7 @@ public struct PredictionEngine: Sendable {
             let uamDecay = exp(-Double(minutes) / 90.0)  // ~1.5 hour time constant
             let predUCI = glucoseDelta * uamDecay
             
-            let glucose = max(39, min(400, prevGlucose + predBGI + predUCI))
+            let glucose = max(39, min(401, prevGlucose + predBGI + predUCI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
             prevGlucose = glucose
         }
