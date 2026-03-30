@@ -59,6 +59,40 @@ public struct PredictionCurve: Codable, Sendable {
     }
 }
 
+// MARK: - COB Prediction Parameters
+
+/// Parameters for JS-matching COB prediction curve.
+///
+/// Computed in DetermineBasal from glucose deltas, insulin effect, and meal data.
+/// Passed to PredictionEngine.predictCOB for JS oref0 formula parity.
+/// See oref0/lib/determine-basal/determine-basal.js lines 466-548.
+public struct COBPredictionParams: Sendable {
+    /// Carb impact: observed BG deviation minus insulin effect (mg/dL per 5m).
+    /// JS: ci = round(minDelta - bgi, 1)
+    public let ci: Double
+    /// CI duration in 5-minute periods. How long ci lasts to cover all COB.
+    /// JS: cid = min(remainingCATime*60/5/2, max(0, mealCOB*csf/ci))
+    public let cid: Double
+    /// Peak remaining CI for bilinear unobserved carb absorption (mg/dL per 5m).
+    /// JS: remainingCIpeak = remainingCarbs * csf * 5/60 / (remainingCATime/2)
+    public let remainingCIpeak: Double
+    /// Remaining carb absorption time (hours).
+    /// JS: min 3h, adjusted by carb amount and last carb age.
+    public let remainingCATime: Double
+    
+    public init(ci: Double, cid: Double, remainingCIpeak: Double, remainingCATime: Double) {
+        self.ci = ci
+        self.cid = cid
+        self.remainingCIpeak = remainingCIpeak
+        self.remainingCATime = remainingCATime
+    }
+    
+    /// Default params when no meal data: ci from observed deviation, everything else zero.
+    public static func noCarbs(ci: Double) -> COBPredictionParams {
+        COBPredictionParams(ci: ci, cid: 0, remainingCIpeak: 0, remainingCATime: 3.0)
+    }
+}
+
 // MARK: - Prediction Result
 
 /// Complete prediction results with all curves
@@ -125,7 +159,8 @@ public struct PredictionEngine: Sendable {
         carbModel: CarbModel = CarbModel(),
         insulinActivity: Double? = nil,
         iobWithZeroTemp: Double? = nil,
-        iobWithZeroTempActivity: Double? = nil
+        iobWithZeroTempActivity: Double? = nil,
+        cobParams: COBPredictionParams? = nil
     ) -> PredictionResult {
         let sens = profile.currentISF()
         _ = profile.currentTarget()  // target available for future use
@@ -155,16 +190,28 @@ public struct PredictionEngine: Sendable {
             glucoseDelta: glucoseDelta
         )
         
-        let cobCurve = predictCOB(
-            currentGlucose: currentGlucose,
-            iob: iob,
-            activity: resolvedActivity,
-            cob: cob,
-            sens: sens,
-            icr: profile.currentICR(),
-            insulinModel: insulinModel,
-            carbModel: carbModel
-        )
+        let cobCurve: PredictionCurve
+        if let params = cobParams {
+            // Use JS-matching COB formula with explicit parameters
+            cobCurve = predictCOBOref0(
+                currentGlucose: currentGlucose,
+                activity: resolvedActivity,
+                sens: sens,
+                insulinModel: insulinModel,
+                cobParams: params
+            )
+        } else {
+            cobCurve = predictCOB(
+                currentGlucose: currentGlucose,
+                iob: iob,
+                activity: resolvedActivity,
+                cob: cob,
+                sens: sens,
+                icr: profile.currentICR(),
+                insulinModel: insulinModel,
+                carbModel: carbModel
+            )
+        }
         
         let uamCurve = predictUAM(
             currentGlucose: currentGlucose,
@@ -320,6 +367,77 @@ public struct PredictionEngine: Sendable {
             let carbImpact = (absorbedCarbs - prevAbsorbed) / icr * sens
             
             let glucose = max(39, min(400, prevGlucose + predBGI + carbImpact))
+            points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
+            prevGlucose = glucose
+        }
+        
+        return PredictionCurve(type: .cob, points: points)
+    }
+    
+    // MARK: - COB Prediction (oref0-matching)
+    
+    /// Predict COB curve using JS oref0 formula for cross-validation parity.
+    ///
+    /// Matches JS determine-basal.js lines 584-596:
+    ///   predCI = max(0, max(0,ci) * (1 - length/max(cid*2,1)))        // linear observed decay
+    ///   remainingCI = max(0, intervals/(remainingCATime/2*12) * peak)  // bilinear unobserved
+    ///   COBpredBG = prev + predBGI + min(0, predDev) + predCI + remainingCI
+    private func predictCOBOref0(
+        currentGlucose: Double,
+        activity: Double,
+        sens: Double,
+        insulinModel: InsulinModel,
+        cobParams: COBPredictionParams
+    ) -> PredictionCurve {
+        var points: [PredictionPoint] = []
+        let maxTicks = 48  // 4 hours at 5-min intervals, matching JS
+        let intervals = min(maxTicks, predictionMinutes / intervalMinutes)
+        let tau = insulinModel.dia * 60.0 / 1.85
+        let ci = cobParams.ci
+        let cid = cobParams.cid
+        let remainingCIpeak = cobParams.remainingCIpeak
+        let remainingCATime = cobParams.remainingCATime
+        
+        var prevGlucose = currentGlucose
+        
+        for i in 0...intervals {
+            let minutes = i * intervalMinutes
+            
+            if i == 0 {
+                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                continue
+            }
+            
+            // predBGI: insulin effect at this tick
+            // JS: predBGI = round(-iobTick.activity * sens * 5, 2)
+            let t = Double(minutes)
+            let decay = exp(-t / tau)
+            let activityTick = activity * decay
+            let predBGI = (-activityTick * sens * Double(intervalMinutes)).rounded(toPlaces: 2)
+            
+            // predDev: deviation impact decays linearly over 60 min (12 ticks)
+            // JS: predDev = ci * (1 - min(1, IOBpredBGs.length/(60/5)))
+            // At tick i, JS array length = i (bg at [0] plus i-1 computed, about to add i-th)
+            let predDev = ci * (1.0 - min(1.0, Double(i) / 12.0))
+            
+            // predCI: linear decay of observed carb impact from ci down to 0
+            // JS: predCI = max(0, max(0,ci) * (1 - COBpredBGs.length/max(cid*2,1)))
+            let predCI = max(0.0, max(0.0, ci) * (1.0 - Double(i) / max(cid * 2.0, 1.0)))
+            
+            // remainingCI: bilinear (/\) unobserved carb absorption
+            // JS: intervals = min(COBpredBGs.length, (remainingCATime*12)-COBpredBGs.length)
+            //     remainingCI = max(0, intervals/(remainingCATime/2*12) * remainingCIpeak)
+            let bilinearPos = min(Double(i), remainingCATime * 12.0 - Double(i))
+            let halfPeakTicks = remainingCATime / 2.0 * 12.0
+            let remainingCI = halfPeakTicks > 0
+                ? max(0.0, bilinearPos / halfPeakTicks * remainingCIpeak)
+                : 0.0
+            
+            // COBpredBG: prev + predBGI + min(0, predDev) + predCI + remainingCI
+            // Key: only NEGATIVE deviations included (positive deviations are carb absorption,
+            // already accounted for by predCI/remainingCI)
+            let glucose = max(39.0, min(400.0,
+                prevGlucose + predBGI + min(0.0, predDev) + predCI + remainingCI))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
             prevGlucose = glucose
         }

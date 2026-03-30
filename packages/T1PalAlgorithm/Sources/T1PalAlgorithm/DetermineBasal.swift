@@ -366,20 +366,6 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         let minDelta = min(glucoseDelta, shortAvgDelta)
         let minAvgDelta = min(shortAvgDelta, longAvgDelta)
         
-        let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
-        let predResult = predictionEngine.predict(
-            currentGlucose: inputs.glucose.first?.glucose ?? 0,
-            glucoseDelta: glucoseDelta,
-            iob: inputs.insulinOnBoard,
-            cob: inputs.carbsOnBoard,
-            profile: profile,
-            insulinModel: insulinModel,
-            insulinActivity: inputs.insulinActivity,
-            iobWithZeroTemp: inputs.iobWithZeroTemp,
-            iobWithZeroTempActivity: inputs.iobWithZeroTempActivity
-        )
-        let predictions = predResult.toGlucosePredictions()
-        
         // Derive guards and safety values from prediction curves
         let target = profile.currentTarget()
         // JS rounds sens to 1 decimal when autosens is active (determine-basal.js:340)
@@ -396,6 +382,81 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         let resolvedActivity = inputs.insulinActivity ?? (inputs.insulinOnBoard / tau)
         // bgi rounded to 2 decimals matching JS: round(-activity * sens * 5, 2)
         let bgi = (-resolvedActivity * sens * 5).rounded(toPlaces: 2)
+        
+        // --- COB prediction parameters (JS determine-basal.js:466-548) ---
+        // ci: carb impact = observed deviation minus insulin effect
+        var ci = (minDelta - bgi).rounded(toPlaces: 1)
+        let carbRatio = profile.currentICR()
+        let csf = sens / carbRatio  // carb sensitivity factor: mg/dL per gram
+        let maxCI = (30.0 * csf * 5.0 / 60.0).rounded(toPlaces: 1)
+        if ci > maxCI {
+            ci = maxCI
+        }
+        
+        let mealCOB = inputs.carbsOnBoard
+        let mealCarbs = inputs.mealCarbs ?? 0
+        let sensitivityRatio = 1.0  // autosens ratio (1.0 when not using autosens)
+        
+        // remainingCATime: how long remaining carbs will take to absorb
+        var remainingCATimeMin = 3.0 / sensitivityRatio  // 3h minimum
+        var remainingCATime = remainingCATimeMin
+        if mealCarbs > 0 {
+            remainingCATimeMin = max(remainingCATimeMin, mealCOB / 20.0)
+            let lastCarbAge: Double  // minutes since last carb entry
+            if let lct = inputs.lastCarbTime {
+                lastCarbAge = (inputs.currentTime.timeIntervalSince(lct) / 60.0).rounded()
+            } else {
+                lastCarbAge = 120  // default 2h if unknown
+            }
+            remainingCATime = (remainingCATimeMin + 1.5 * lastCarbAge / 60.0).rounded(toPlaces: 1)
+        }
+        
+        // totalCI/totalCA: total carb impact and total carbs absorbed over remaining time
+        let totalCI = max(0.0, ci / 5.0 * 60.0 * remainingCATime / 2.0)
+        let totalCA = csf > 0 ? totalCI / csf : 0
+        let remainingCarbsCap = 90.0
+        let remainingCarbsFraction = 1.0
+        let remainingCarbsIgnore = 1.0 - remainingCarbsFraction
+        var remainingCarbs = max(0.0, mealCOB - totalCA - mealCarbs * remainingCarbsIgnore)
+        remainingCarbs = min(remainingCarbsCap, remainingCarbs)
+        
+        // remainingCIpeak: peak of bilinear /\ curve for unobserved carb absorption
+        let remainingCIpeak = remainingCATime > 0
+            ? remainingCarbs * csf * 5.0 / 60.0 / (remainingCATime / 2.0)
+            : 0.0
+        
+        // cid: duration of observed carb impact (in 5-min periods)
+        let cid: Double
+        if ci == 0 {
+            cid = 0
+        } else {
+            cid = min(remainingCATime * 60.0 / 5.0 / 2.0, max(0, mealCOB * csf / ci))
+        }
+        
+        // fractionCarbsLeft for guard blending
+        let fractionCarbsLeft = mealCarbs > 0 ? mealCOB / mealCarbs : 0.0
+        let hasCOB = cid > 0 || remainingCIpeak > 0
+        
+        let cobParams = COBPredictionParams(
+            ci: ci, cid: cid,
+            remainingCIpeak: remainingCIpeak,
+            remainingCATime: remainingCATime
+        )
+        
+        let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
+        let predResult = predictionEngine.predict(
+            currentGlucose: inputs.glucose.first?.glucose ?? 0,
+            glucoseDelta: glucoseDelta,
+            iob: inputs.insulinOnBoard,
+            cob: inputs.carbsOnBoard,
+            profile: profile,
+            insulinModel: insulinModel,
+            insulinActivity: inputs.insulinActivity,
+            iobWithZeroTemp: inputs.iobWithZeroTemp,
+            iobWithZeroTempActivity: inputs.iobWithZeroTempActivity,
+            cobParams: cobParams
+        )
+        let predictions = predResult.toGlucosePredictions()
         
         // EventualBG: match JS oref0 formula (determine-basal.js:394-417)
         // naive_eventualBG = round(bg - iob * sens)
@@ -427,10 +488,10 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             targetBG: target,
             eventualBG: eventualBG,
             bgi: bgi,
-            hasCOB: inputs.carbsOnBoard > 0,
+            hasCOB: hasCOB,
             enableUAM: false,  // oref0 doesn't have UAM (that's oref1)
-            hasCarbs: inputs.carbsOnBoard > 0,
-            fractionCarbsLeft: 1.0
+            hasCarbs: mealCarbs > 0,
+            fractionCarbsLeft: fractionCarbsLeft
         )
         
         let threshold = guards.threshold

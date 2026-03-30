@@ -61,6 +61,17 @@ public struct AlgorithmInputs: Sendable {
     /// Long-term average delta (~45 min). From glucose_status.long_avgdelta in oref0.
     public let longAvgDelta: Double?
     
+    // ALG-PARITY-007: Meal data for COB prediction (oref0 meal_data fields)
+    /// Total carbs from original meal entry (g). Distinct from carbsOnBoard (remaining COB).
+    /// Used for fractionCarbsLeft = carbsOnBoard / mealCarbs.
+    public let mealCarbs: Double?
+    /// Timestamp of last carb entry. Used for remainingCATime adjustment in oref0.
+    public let lastCarbTime: Date?
+    /// Slope from peak deviation to current deviation (mg/dL/5m per 5m). For UAM prediction.
+    public let slopeFromMaxDeviation: Double?
+    /// Slope from trough deviation to current deviation (mg/dL/5m per 5m). For UAM prediction.
+    public let slopeFromMinDeviation: Double?
+    
     public init(
         glucose: [GlucoseReading],
         insulinOnBoard: Double = 0,
@@ -79,7 +90,11 @@ public struct AlgorithmInputs: Sendable {
         iobWithZeroTempActivity: Double? = nil,
         glucoseDelta: Double? = nil,
         shortAvgDelta: Double? = nil,
-        longAvgDelta: Double? = nil
+        longAvgDelta: Double? = nil,
+        mealCarbs: Double? = nil,
+        lastCarbTime: Date? = nil,
+        slopeFromMaxDeviation: Double? = nil,
+        slopeFromMinDeviation: Double? = nil
     ) {
         self.glucose = glucose
         self.insulinOnBoard = insulinOnBoard
@@ -99,6 +114,10 @@ public struct AlgorithmInputs: Sendable {
         self.glucoseDelta = glucoseDelta
         self.shortAvgDelta = shortAvgDelta
         self.longAvgDelta = longAvgDelta
+        self.mealCarbs = mealCarbs
+        self.lastCarbTime = lastCarbTime
+        self.slopeFromMaxDeviation = slopeFromMaxDeviation
+        self.slopeFromMinDeviation = slopeFromMinDeviation
     }
     
     // MARK: - Effect Modifier Application (ALG-EFF-003)
