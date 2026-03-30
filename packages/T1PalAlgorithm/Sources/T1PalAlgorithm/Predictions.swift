@@ -160,7 +160,8 @@ public struct PredictionEngine: Sendable {
         insulinActivity: Double? = nil,
         iobWithZeroTemp: Double? = nil,
         iobWithZeroTempActivity: Double? = nil,
-        cobParams: COBPredictionParams? = nil
+        cobParams: COBPredictionParams? = nil,
+        ci: Double? = nil
     ) -> PredictionResult {
         let sens = profile.currentISF()
         _ = profile.currentTarget()  // target available for future use
@@ -187,7 +188,7 @@ public struct PredictionEngine: Sendable {
             activity: resolvedActivity,
             sens: sens,
             insulinModel: insulinModel,
-            glucoseDelta: glucoseDelta
+            ci: ci
         )
         
         let cobCurve: PredictionCurve
@@ -287,16 +288,15 @@ public struct PredictionEngine: Sendable {
         activity: Double,
         sens: Double,
         insulinModel: InsulinModel,
-        glucoseDelta: Double = 0
+        ci: Double? = nil
     ) -> PredictionCurve {
         var points: [PredictionPoint] = []
         let intervals = predictionMinutes / intervalMinutes
         let tau = insulinModel.dia * 60.0 / 1.85
         
-        // Carb impact deviation (ci): deviation from expected based on delta
-        // In oref0: ci = round(minDelta - bgi, 1) where bgi = -activity * sens * 5
-        let bgi0 = -activity * sens * Double(intervalMinutes)
-        let ci = glucoseDelta - bgi0
+        // Use pre-computed ci from DetermineBasal (minDelta - bgi, rounded & capped)
+        // or fall back to zero if not provided
+        let resolvedCI = ci ?? 0
         
         var prevGlucose = currentGlucose
         
@@ -312,10 +312,10 @@ public struct PredictionEngine: Sendable {
             
             // Activity-based BG impact for this tick
             let activityTick = activity * decay
-            let predBGI = -activityTick * sens * Double(intervalMinutes)
+            let predBGI = (-activityTick * sens * Double(intervalMinutes)).rounded(toPlaces: 2)
             
             // Deviation impact decays linearly from ci to 0 over 60 minutes
-            let predDev = ci * (1.0 - min(1.0, Double(i) / 12.0))
+            let predDev = resolvedCI * (1.0 - min(1.0, Double(i) / 12.0))
             
             let glucose = max(39, min(400, prevGlucose + predBGI + predDev))
             points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))

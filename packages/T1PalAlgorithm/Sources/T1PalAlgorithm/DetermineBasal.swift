@@ -454,7 +454,8 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             insulinActivity: inputs.insulinActivity,
             iobWithZeroTemp: inputs.iobWithZeroTemp,
             iobWithZeroTempActivity: inputs.iobWithZeroTempActivity,
-            cobParams: cobParams
+            cobParams: cobParams,
+            ci: ci
         )
         let predictions = predResult.toGlucosePredictions()
         
