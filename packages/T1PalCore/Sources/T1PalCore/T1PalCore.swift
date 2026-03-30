@@ -186,6 +186,8 @@ public struct TherapyProfile: Codable, Sendable {
     /// NS-IOB-001b: Insulin model preset for IOB calculations
     /// Values: "rapidActingAdult" (default), "rapidActingChild", "fiasp", "lyumjev", "afrezza"
     public var insulinModel: String?
+    /// Duration of insulin action in hours (e.g. 5.0). Used by oref0 for tau calculation.
+    public var dia: Double
     
     public init(
         basalRates: [BasalRate] = [],
@@ -197,7 +199,8 @@ public struct TherapyProfile: Codable, Sendable {
         maxBasalRate: Double? = nil,
         suspendThreshold: Double? = nil,
         dosingStrategy: String? = nil,
-        insulinModel: String? = nil
+        insulinModel: String? = nil,
+        dia: Double = 6.0
     ) {
         self.basalRates = basalRates
         self.carbRatios = carbRatios
@@ -209,6 +212,7 @@ public struct TherapyProfile: Codable, Sendable {
         self.suspendThreshold = suspendThreshold
         self.dosingStrategy = dosingStrategy
         self.insulinModel = insulinModel
+        self.dia = dia
     }
     
     /// AID-LOOP-001: Default therapy profile for fallback

@@ -148,7 +148,11 @@ public struct PredictionEngine: Sendable {
         self.intervalMinutes = intervalMinutes
     }
     
-    /// Calculate all prediction curves
+    /// Calculate all prediction curves.
+    ///
+    /// When `iobArray` is provided, prediction curves iterate through pre-computed
+    /// per-tick activity values (matching JS determine-basal behavior exactly).
+    /// When absent, falls back to exponential decay from a snapshot (legacy path).
     public func predict(
         currentGlucose: Double,
         glucoseDelta: Double,
@@ -161,51 +165,58 @@ public struct PredictionEngine: Sendable {
         iobWithZeroTemp: Double? = nil,
         iobWithZeroTempActivity: Double? = nil,
         cobParams: COBPredictionParams? = nil,
-        ci: Double? = nil
+        ci: Double? = nil,
+        iobArray: [IOBArrayTick]? = nil
     ) -> PredictionResult {
         let sens = profile.currentISF()
         _ = profile.currentTarget()  // target available for future use
         let scheduledBasal = profile.currentBasal()
         
-        // Resolve activity: use provided value or fall back to IOB/tau approximation
-        let tau = insulinModel.dia * 60.0 / 1.85
-        let resolvedActivity = insulinActivity ?? (iob / tau)
-        let resolvedZTActivity = iobWithZeroTempActivity ?? insulinActivity ?? (iob / tau)
-        let resolvedZTIob = iobWithZeroTemp ?? iob
+        // Resolve IOB array: use provided, or generate from snapshot
+        let resolvedArray: [IOBArrayTick]
+        if let arr = iobArray {
+            resolvedArray = arr
+        } else {
+            let tau = insulinModel.dia * 60.0 / 1.85
+            let resolvedActivity = insulinActivity ?? (iob / tau)
+            let resolvedZTActivity = iobWithZeroTempActivity ?? insulinActivity ?? (iob / tau)
+            let resolvedZTIob = iobWithZeroTemp ?? iob
+            resolvedArray = IOBArrayGenerator.fromSnapshot(
+                iob: iob,
+                activity: resolvedActivity,
+                zeroTempIob: resolvedZTIob,
+                zeroTempActivity: resolvedZTActivity,
+                dia: insulinModel.dia
+            )
+        }
         
-        // Calculate curves
+        // Calculate curves using IOB array
         let ztCurve = predictZT(
             currentGlucose: currentGlucose,
-            iobWithZeroTemp: resolvedZTIob,
-            activity: resolvedZTActivity,
-            sens: sens,
-            insulinModel: insulinModel
+            iobArray: resolvedArray,
+            sens: sens
         )
         
         let iobCurve = predictIOB(
             currentGlucose: currentGlucose,
-            iob: iob,
-            activity: resolvedActivity,
+            iobArray: resolvedArray,
             sens: sens,
-            insulinModel: insulinModel,
             ci: ci
         )
         
         let cobCurve: PredictionCurve
         if let params = cobParams {
-            // Use JS-matching COB formula with explicit parameters
             cobCurve = predictCOBOref0(
                 currentGlucose: currentGlucose,
-                activity: resolvedActivity,
+                iobArray: resolvedArray,
                 sens: sens,
-                insulinModel: insulinModel,
                 cobParams: params
             )
         } else {
             cobCurve = predictCOB(
                 currentGlucose: currentGlucose,
                 iob: iob,
-                activity: resolvedActivity,
+                activity: insulinActivity ?? (iob / (insulinModel.dia * 60.0 / 1.85)),
                 cob: cob,
                 sens: sens,
                 icr: profile.currentICR(),
@@ -217,10 +228,8 @@ public struct PredictionEngine: Sendable {
         let uamCurve = predictUAM(
             currentGlucose: currentGlucose,
             glucoseDelta: glucoseDelta,
-            iob: iob,
-            activity: resolvedActivity,
-            sens: sens,
-            insulinModel: insulinModel
+            iobArray: resolvedArray,
+            sens: sens
         )
         
         return PredictionResult(
@@ -240,88 +249,88 @@ public struct PredictionEngine: Sendable {
     ///   predZTBGI = -iobTick.iobWithZeroTemp.activity * sens * 5
     ///   ZTpredBG = prev + predZTBGI
     ///
-    /// Uses iobWithZeroTemp activity (counterfactual: what if temp were cancelled)
-    /// decayed with the same exponential model.
+    /// Uses iobWithZeroTemp activity from the IOB array at each tick.
+    /// JS does NOT clamp per-tick — raw values are used during loop,
+    /// clamped only in post-loop output (lines 660-670).
     private func predictZT(
         currentGlucose: Double,
-        iobWithZeroTemp: Double,
-        activity: Double,
-        sens: Double,
-        insulinModel: InsulinModel
+        iobArray: [IOBArrayTick],
+        sens: Double
     ) -> PredictionCurve {
-        var points: [PredictionPoint] = []
+        let maxTicks = min(iobArray.count, predictionMinutes / intervalMinutes + 1)
+        var rawPoints: [(minutes: Int, glucose: Double)] = []
         var glucose = currentGlucose
-        let intervals = predictionMinutes / intervalMinutes
-        let tau = insulinModel.dia * 60.0 / 1.85
-        
-        for i in 0...intervals {
+
+        for i in 0..<maxTicks {
             let minutes = i * intervalMinutes
-            
+
             if i == 0 {
-                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                rawPoints.append((minutes: 0, glucose: currentGlucose))
                 continue
             }
-            
-            let t = Double(minutes)
-            let decay = exp(-t / tau)
-            let activityTick = activity * decay
+
+            // JS forEach index k maps to Swift i-1: at k=0 → iobArray[0] produces prediction[1]
+            let activityTick = iobArray[i - 1].zeroTempActivity
             let predZTBGI = -activityTick * sens * Double(intervalMinutes)
-            
-            glucose = max(39, min(401, glucose + predZTBGI))
-            points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
+            glucose += predZTBGI
+            rawPoints.append((minutes: minutes, glucose: glucose))
         }
-        
+
+        // Clamp after loop (matching JS post-loop: round(min(401, max(39, p))))
+        let points = rawPoints.map { pt in
+            PredictionPoint(
+                minutesFromNow: pt.minutes,
+                glucose: max(39, min(401, pt.glucose)).rounded()
+            )
+        }
         return PredictionCurve(type: .zt, points: points)
     }
     
     // MARK: - IOB Prediction
     
-    /// Predict based on insulin on board using tick-by-tick accumulation.
+    /// Predict based on insulin on board using the IOB array.
     ///
     /// Matches JS oref0 prediction loop (determine-basal.js:574-581):
-    ///   predBGI = -iobTick.activity * sens * 5
+    ///   predBGI = round(-iobTick.activity * sens * 5, 2)
     ///   predDev = ci * (1 - min(1, tick/12))   // deviation decays over 60 min
     ///   IOBpredBG = prev + predBGI + predDev
+    ///
+    /// JS does NOT clamp per-tick. Raw values accumulate during the loop;
+    /// clamping happens only in post-loop output (lines 650-658).
     private func predictIOB(
         currentGlucose: Double,
-        iob: Double,
-        activity: Double,
+        iobArray: [IOBArrayTick],
         sens: Double,
-        insulinModel: InsulinModel,
         ci: Double? = nil
     ) -> PredictionCurve {
-        var points: [PredictionPoint] = []
-        let intervals = predictionMinutes / intervalMinutes
-        let tau = insulinModel.dia * 60.0 / 1.85
-        
-        // Use pre-computed ci from DetermineBasal (minDelta - bgi, rounded & capped)
-        // or fall back to zero if not provided
+        let maxTicks = min(iobArray.count, predictionMinutes / intervalMinutes + 1)
         let resolvedCI = ci ?? 0
-        
-        var prevGlucose = currentGlucose
-        
-        for i in 0...intervals {
+        var rawPoints: [(minutes: Int, glucose: Double)] = []
+        var glucose = currentGlucose
+
+        for i in 0..<maxTicks {
             let minutes = i * intervalMinutes
-            let t = Double(minutes)
-            let decay = exp(-t / tau)
-            
+
             if i == 0 {
-                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                rawPoints.append((minutes: 0, glucose: currentGlucose))
                 continue
             }
-            
-            // Activity-based BG impact for this tick
-            let activityTick = activity * decay
+
+            // JS forEach index k maps to Swift i-1: at k=0 → iobArray[0] produces prediction[1]
+            let activityTick = iobArray[i - 1].activity
             let predBGI = (-activityTick * sens * Double(intervalMinutes)).rounded(toPlaces: 2)
-            
-            // Deviation impact decays linearly from ci to 0 over 60 minutes
             let predDev = resolvedCI * (1.0 - min(1.0, Double(i) / 12.0))
-            
-            let glucose = max(39, min(401, prevGlucose + predBGI + predDev))
-            points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
-            prevGlucose = glucose
+            glucose += predBGI + predDev
+            rawPoints.append((minutes: minutes, glucose: glucose))
         }
-        
+
+        // Clamp after loop (matching JS post-loop: round(min(401, max(39, p))))
+        let points = rawPoints.map { pt in
+            PredictionPoint(
+                minutesFromNow: pt.minutes,
+                glucose: max(39, min(401, pt.glucose)).rounded()
+            )
+        }
         return PredictionCurve(type: .iob, points: points)
     }
     
@@ -382,110 +391,95 @@ public struct PredictionEngine: Sendable {
     ///   predCI = max(0, max(0,ci) * (1 - length/max(cid*2,1)))        // linear observed decay
     ///   remainingCI = max(0, intervals/(remainingCATime/2*12) * peak)  // bilinear unobserved
     ///   COBpredBG = prev + predBGI + min(0, predDev) + predCI + remainingCI
+    ///
+    /// JS does NOT clamp per-tick. Raw values accumulate during loop.
     private func predictCOBOref0(
         currentGlucose: Double,
-        activity: Double,
+        iobArray: [IOBArrayTick],
         sens: Double,
-        insulinModel: InsulinModel,
         cobParams: COBPredictionParams
     ) -> PredictionCurve {
-        var points: [PredictionPoint] = []
-        let maxTicks = 48  // 4 hours at 5-min intervals, matching JS
-        let intervals = min(maxTicks, predictionMinutes / intervalMinutes)
-        let tau = insulinModel.dia * 60.0 / 1.85
+        let maxTicks = min(48, min(iobArray.count, predictionMinutes / intervalMinutes + 1))
         let ci = cobParams.ci
         let cid = cobParams.cid
         let remainingCIpeak = cobParams.remainingCIpeak
         let remainingCATime = cobParams.remainingCATime
-        
-        var prevGlucose = currentGlucose
-        
-        for i in 0...intervals {
+        var rawPoints: [(minutes: Int, glucose: Double)] = []
+        var glucose = currentGlucose
+
+        for i in 0..<maxTicks {
             let minutes = i * intervalMinutes
-            
+
             if i == 0 {
-                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                rawPoints.append((minutes: 0, glucose: currentGlucose))
                 continue
             }
-            
-            // predBGI: insulin effect at this tick
-            // JS: predBGI = round(-iobTick.activity * sens * 5, 2)
-            let t = Double(minutes)
-            let decay = exp(-t / tau)
-            let activityTick = activity * decay
+
+            // JS forEach index k maps to Swift i-1: at k=0 → iobArray[0] produces prediction[1]
+            let activityTick = iobArray[i - 1].activity
             let predBGI = (-activityTick * sens * Double(intervalMinutes)).rounded(toPlaces: 2)
-            
-            // predDev: deviation impact decays linearly over 60 min (12 ticks)
-            // JS: predDev = ci * (1 - min(1, IOBpredBGs.length/(60/5)))
-            // At tick i, JS array length = i (bg at [0] plus i-1 computed, about to add i-th)
             let predDev = ci * (1.0 - min(1.0, Double(i) / 12.0))
-            
-            // predCI: linear decay of observed carb impact from ci down to 0
-            // JS: predCI = max(0, max(0,ci) * (1 - COBpredBGs.length/max(cid*2,1)))
             let predCI = max(0.0, max(0.0, ci) * (1.0 - Double(i) / max(cid * 2.0, 1.0)))
-            
-            // remainingCI: bilinear (/\) unobserved carb absorption
-            // JS: intervals = min(COBpredBGs.length, (remainingCATime*12)-COBpredBGs.length)
-            //     remainingCI = max(0, intervals/(remainingCATime/2*12) * remainingCIpeak)
             let bilinearPos = min(Double(i), remainingCATime * 12.0 - Double(i))
             let halfPeakTicks = remainingCATime / 2.0 * 12.0
             let remainingCI = halfPeakTicks > 0
                 ? max(0.0, bilinearPos / halfPeakTicks * remainingCIpeak)
                 : 0.0
-            
-            // COBpredBG: prev + predBGI + min(0, predDev) + predCI + remainingCI
-            // Key: only NEGATIVE deviations included (positive deviations are carb absorption,
-            // already accounted for by predCI/remainingCI)
-            let glucose = max(39.0, min(401.0,
-                prevGlucose + predBGI + min(0.0, predDev) + predCI + remainingCI))
-            points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
-            prevGlucose = glucose
+
+            glucose += predBGI + min(0.0, predDev) + predCI + remainingCI
+            rawPoints.append((minutes: minutes, glucose: glucose))
         }
-        
+
+        // Clamp after loop
+        let points = rawPoints.map { pt in
+            PredictionPoint(
+                minutesFromNow: pt.minutes,
+                glucose: max(39, min(401, pt.glucose)).rounded()
+            )
+        }
         return PredictionCurve(type: .cob, points: points)
     }
     
     // MARK: - UAM Prediction
     
-    /// Predict unannounced meal effect
+    /// Predict unannounced meal effect using IOB array.
+    ///
+    /// JS does NOT clamp per-tick. Raw values accumulate during loop.
     private func predictUAM(
         currentGlucose: Double,
         glucoseDelta: Double,
-        iob: Double,
-        activity: Double,
-        sens: Double,
-        insulinModel: InsulinModel
+        iobArray: [IOBArrayTick],
+        sens: Double
     ) -> PredictionCurve {
-        var points: [PredictionPoint] = []
-        let intervals = predictionMinutes / intervalMinutes
-        let tau = insulinModel.dia * 60.0 / 1.85
-        
-        // UAM assumes the current rise will continue but decay
-        var prevGlucose = currentGlucose
-        
-        for i in 0...intervals {
+        let maxTicks = min(iobArray.count, predictionMinutes / intervalMinutes + 1)
+        var rawPoints: [(minutes: Int, glucose: Double)] = []
+        var glucose = currentGlucose
+
+        for i in 0..<maxTicks {
             let minutes = i * intervalMinutes
-            
+
             if i == 0 {
-                points.append(PredictionPoint(minutesFromNow: 0, glucose: currentGlucose))
+                rawPoints.append((minutes: 0, glucose: currentGlucose))
                 continue
             }
-            
-            // IOB effect via activity decay (matching JS predBGI)
-            let t = Double(minutes)
-            let decay = exp(-t / tau)
-            let activityTick = activity * decay
+
+            // JS forEach index k maps to Swift i-1: at k=0 → iobArray[0] produces prediction[1]
+            let activityTick = iobArray[i - 1].activity
             let predBGI = -activityTick * sens * Double(intervalMinutes)
-            
-            // UAM effect: current deviation continues with exponential decay
-            let uamDecay = exp(-Double(minutes) / 90.0)  // ~1.5 hour time constant
+            let uamDecay = exp(-Double(minutes) / 90.0)
             let predUCI = glucoseDelta * uamDecay
-            
-            let glucose = max(39, min(401, prevGlucose + predBGI + predUCI))
-            points.append(PredictionPoint(minutesFromNow: minutes, glucose: glucose))
-            prevGlucose = glucose
+
+            glucose += predBGI + predUCI
+            rawPoints.append((minutes: minutes, glucose: glucose))
         }
-        
+
+        // Clamp after loop
+        let points = rawPoints.map { pt in
+            PredictionPoint(
+                minutesFromNow: pt.minutes,
+                glucose: max(39, min(401, pt.glucose)).rounded()
+            )
+        }
         return PredictionCurve(type: .uam, points: points)
     }
 }

@@ -378,7 +378,9 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         let targetRange = profile.currentTargetRange()
         let minBG = targetRange.low
         let maxBG = targetRange.high
-        let tau = insulinModel.dia * 60.0 / 1.85
+        // Use profile DIA (hours), matching JS oref0 which reads profile.dia
+        let profileDIA = inputs.profile.dia
+        let tau = profileDIA * 60.0 / 1.85
         let resolvedActivity = inputs.insulinActivity ?? (inputs.insulinOnBoard / tau)
         // bgi rounded to 2 decimals matching JS: round(-activity * sens * 5, 2)
         let bgi = (-resolvedActivity * sens * 5).rounded(toPlaces: 2)
@@ -443,6 +445,18 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             remainingCATime: remainingCATime
         )
         
+        // Generate IOB array for prediction curves (Option B: IOB array architecture)
+        // Matches JS oref0 adapter's generateIobArray() — exponential decay from snapshot.
+        // When dose history is available, can use IOBArrayGenerator.fromDoseHistory() instead.
+        let iobArray = IOBArrayGenerator.fromSnapshot(
+            iob: inputs.insulinOnBoard,
+            basalIob: 0,
+            activity: inputs.insulinActivity ?? (inputs.insulinOnBoard / (profileDIA * 60.0 / 1.85)),
+            zeroTempIob: inputs.iobWithZeroTemp,
+            zeroTempActivity: inputs.iobWithZeroTempActivity,
+            dia: profileDIA
+        )
+        
         let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
         let predResult = predictionEngine.predict(
             currentGlucose: inputs.glucose.first?.glucose ?? 0,
@@ -451,11 +465,9 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             cob: inputs.carbsOnBoard,
             profile: profile,
             insulinModel: insulinModel,
-            insulinActivity: inputs.insulinActivity,
-            iobWithZeroTemp: inputs.iobWithZeroTemp,
-            iobWithZeroTempActivity: inputs.iobWithZeroTempActivity,
             cobParams: cobParams,
-            ci: ci
+            ci: ci,
+            iobArray: iobArray
         )
         let predictions = predResult.toGlucosePredictions()
         
