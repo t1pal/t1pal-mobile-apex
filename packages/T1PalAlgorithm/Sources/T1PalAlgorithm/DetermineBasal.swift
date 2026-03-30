@@ -541,10 +541,10 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
                 reason += "; setting basal"
             } else {
                 // Calculate low temp to bring BG up
-                var insulinReq = 2 * min(0, (eventualBG - target) / sens)
+                var insulinReq = (2 * min(0, (eventualBG - target) / sens)).rounded(toPlaces: 2)
                 // If barely falling, reduce insulinReq proportionally
                 if minDelta < 0 && minDelta > expectedDelta && expectedDelta < 0 {
-                    insulinReq = insulinReq * (minDelta / expectedDelta)
+                    insulinReq = (insulinReq * (minDelta / expectedDelta)).rounded(toPlaces: 2)
                 }
                 suggestedRate = scheduledBasal + (2 * insulinReq)
                 suggestedRate = max(suggestedRate, 0)
@@ -574,7 +574,7 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         // Above target: calculate high temp
         // Origin: determine-basal.js:1055-1070
         else {
-            var insulinReq = (min(minPredBG, eventualBG) - target) / sens
+            var insulinReq = ((min(minPredBG, eventualBG) - target) / sens).rounded(toPlaces: 2)
             // Cap at maxIOB
             if insulinReq > maxIOB - inputs.insulinOnBoard {
                 insulinReq = maxIOB - inputs.insulinOnBoard
