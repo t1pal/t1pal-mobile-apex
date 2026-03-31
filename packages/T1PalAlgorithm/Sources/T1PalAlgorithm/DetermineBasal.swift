@@ -447,7 +447,7 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         
         // Generate IOB array for prediction curves (Option B: IOB array architecture)
         // Matches JS oref0 adapter's generateIobArray() — exponential decay from snapshot.
-        // When dose history is available, can use IOBArrayGenerator.fromDoseHistory() instead.
+        // Activity may be computed from dose history by the adapter when available.
         let iobArray = IOBArrayGenerator.fromSnapshot(
             iob: inputs.insulinOnBoard,
             basalIob: 0,
