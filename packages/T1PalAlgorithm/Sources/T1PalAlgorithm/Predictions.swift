@@ -166,9 +166,12 @@ public struct PredictionEngine: Sendable {
         iobWithZeroTempActivity: Double? = nil,
         cobParams: COBPredictionParams? = nil,
         ci: Double? = nil,
-        iobArray: [IOBArrayTick]? = nil
+        iobArray: [IOBArrayTick]? = nil,
+        slopeFromDeviations: Double? = nil,
+        uci: Double? = nil
     ) -> PredictionResult {
-        let sens = profile.currentISF()
+        // Match JS: sens = round(profile.sens / sensitivityRatio, 1)
+        let sens = profile.currentISF().rounded(toPlaces: 1)
         _ = profile.currentTarget()  // target available for future use
         let scheduledBasal = profile.currentBasal()
         
@@ -227,7 +230,9 @@ public struct PredictionEngine: Sendable {
         
         let uamCurve = predictUAM(
             currentGlucose: currentGlucose,
-            glucoseDelta: glucoseDelta,
+            uci: uci ?? ci ?? glucoseDelta,
+            ci: ci ?? 0,
+            slopeFromDeviations: slopeFromDeviations ?? 0,
             iobArray: resolvedArray,
             sens: sens
         )
@@ -444,10 +449,16 @@ public struct PredictionEngine: Sendable {
     
     /// Predict unannounced meal effect using IOB array.
     ///
-    /// JS does NOT clamp per-tick. Raw values accumulate during loop.
+    /// Matches JS oref0 determine-basal.js:598-610:
+    ///   predUCIslope = max(0, uci + (tick_count * slopeFromDeviations))
+    ///   predUCImax = max(0, uci * (1 - tick_count / 36))  // linear decay over 3h
+    ///   predUCI = min(predUCIslope, predUCImax)
+    ///   UAMpredBG = prev + predBGI + min(0, predDev) + predUCI
     private func predictUAM(
         currentGlucose: Double,
-        glucoseDelta: Double,
+        uci: Double,
+        ci: Double,
+        slopeFromDeviations: Double,
         iobArray: [IOBArrayTick],
         sens: Double
     ) -> PredictionCurve {
@@ -465,11 +476,23 @@ public struct PredictionEngine: Sendable {
 
             // JS forEach index k maps to Swift i-1: at k=0 → iobArray[0] produces prediction[1]
             let activityTick = iobArray[i - 1].activity
-            let predBGI = -activityTick * sens * Double(intervalMinutes)
-            let uamDecay = exp(-Double(minutes) / 90.0)
-            let predUCI = glucoseDelta * uamDecay
-
-            glucose += predBGI + predUCI
+            let predBGI = (-activityTick * sens * Double(intervalMinutes)).rounded(toPlaces: 2)
+            
+            // predDev: deviation impact drops linearly over 60 min (12 ticks)
+            // JS: predDev = ci * (1 - min(1, IOBpredBGs.length / 12))
+            // IOBpredBGs.length == i at this point (starts at [bg], grows by 1 each iteration)
+            let predDev = ci * (1.0 - min(1.0, Double(i) / 12.0))
+            
+            // UAM carb impact: dual decay model (slope + linear), take minimum
+            // JS: predUCIslope = max(0, uci + (UAMpredBGs.length * slopeFromDeviations))
+            // UAMpredBGs.length == i at this point
+            let predUCIslope = max(0, uci + Double(i) * slopeFromDeviations)
+            // JS: predUCImax = max(0, uci * (1 - UAMpredBGs.length / max(3*60/5, 1)))
+            let predUCImax = max(0, uci * (1.0 - Double(i) / 36.0))
+            let predUCI = min(predUCIslope, predUCImax)
+            
+            // JS: UAMpredBG = prev + predBGI + min(0, predDev) + predUCI
+            glucose += predBGI + min(0, predDev) + predUCI
             rawPoints.append((minutes: minutes, glucose: glucose))
         }
 

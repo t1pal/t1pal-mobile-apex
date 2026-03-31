@@ -387,7 +387,9 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
         
         // --- COB prediction parameters (JS determine-basal.js:466-548) ---
         // ci: carb impact = observed deviation minus insulin effect
-        var ci = (minDelta - bgi).rounded(toPlaces: 1)
+        // uci: uncapped carb impact for UAM prediction (JS: uci stays at original value)
+        let uci = (minDelta - bgi).rounded(toPlaces: 1)
+        var ci = uci
         let carbRatio = profile.currentICR()
         let csf = sens / carbRatio  // carb sensitivity factor: mg/dL per gram
         let maxCI = (30.0 * csf * 5.0 / 60.0).rounded(toPlaces: 1)
@@ -457,6 +459,11 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             dia: profileDIA
         )
         
+        // Compute slopeFromDeviations for UAM prediction (JS determine-basal.js:535)
+        let slopeFromMaxDev = (inputs.slopeFromMaxDeviation ?? 0).rounded(toPlaces: 2)
+        let slopeFromMinDev = (inputs.slopeFromMinDeviation ?? 0).rounded(toPlaces: 2)
+        let slopeFromDeviations = min(slopeFromMaxDev, -slopeFromMinDev / 3.0)
+        
         let predictionEngine = PredictionEngine(predictionMinutes: 240, intervalMinutes: 5)
         let predResult = predictionEngine.predict(
             currentGlucose: inputs.glucose.first?.glucose ?? 0,
@@ -467,7 +474,9 @@ public struct Oref0Algorithm: AlgorithmEngine, Sendable {
             insulinModel: insulinModel,
             cobParams: cobParams,
             ci: ci,
-            iobArray: iobArray
+            iobArray: iobArray,
+            slopeFromDeviations: slopeFromDeviations,
+            uci: uci
         )
         let predictions = predResult.toGlucosePredictions()
         
